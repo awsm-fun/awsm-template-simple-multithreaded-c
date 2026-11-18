@@ -1,0 +1,152 @@
+# The scene the renderer loads: a sun, the ground, a ball and a camera.
+#
+# This is an awsm-renderer scene bundle, the format the awsm scene editor
+# (https://scene.awsm.fun) exports; this one is small enough to be written by
+# hand. To use an exported scene instead, replace this directory with the
+# export (its scene.toml plus its assets/ folder).
+#
+# What the rest of the project relies on:
+#   * NAMES. The app finds nodes by name (the table at the top of
+#     app/src/app.c): "Ball" is the node it moves, "Ground" is what it keeps
+#     the ball on. Rename one here and the app says so in the console.
+#   * UNIT-SIZED MESHES. The sphere has diameter 1 and the plane is 1 × 1, so
+#     each node's `scale` is its size in metres. The app reads sizes that way.
+#   * `active_camera` picks the camera node the renderer draws through.
+#
+# Every id is a UUID. They only have to be unique; these are easy to read.
+# Rotations are quaternions (x, y, z, w). +Y is up, and a camera looks along
+# its own -Z.
+
+name = "simple"
+active_camera = "00000000-0000-4000-8000-000000000004"
+
+# The sky and the ambient light come from the renderer's built-in environment,
+# so the bundle needs no texture files.
+[environment]
+skybox = "built_in_default"
+specular = "built_in_default"
+irradiance = "built_in_default"
+
+# ── Mesh assets: procedural primitives, generated when the scene loads ──────
+
+[assets.00000000-0000-4000-8000-0000000000a1.source.mesh.primitive.sphere]
+radius = 0.5
+segments_long = 48
+segments_lat = 24
+
+[assets.00000000-0000-4000-8000-0000000000a2.source.mesh.primitive.plane]
+width = 1.0
+depth = 1.0
+segments_x = 1
+segments_z = 1
+
+[assets.00000000-0000-4000-8000-0000000000a3.source.mesh.primitive.torus]
+radius = 0.5
+thickness = 0.035
+segments_major = 48
+segments_minor = 8
+
+# ── Nodes ───────────────────────────────────────────────────────────────────
+
+[[nodes]]
+id = "00000000-0000-4000-8000-000000000001"
+name = "Sun"
+# A directional light shines along its own -Z. This one is turned 50° down
+# and 40° to the side, so the ball casts a shadow you can see.
+transform = { translation = [0.0, 0.0, 0.0], rotation = [-0.3971, 0.3100, 0.1445, 0.8517], scale = [1.0, 1.0, 1.0] }
+
+[nodes.kind.light.directional]
+color = [1.0, 0.97, 0.92]
+intensity = 4.0
+shadow = { cast = true }
+
+[[nodes]]
+id = "00000000-0000-4000-8000-000000000002"
+name = "Ground"
+# 12 × 12 metres (the mesh is 1 × 1).
+transform = { translation = [0.0, 0.0, 0.0], rotation = [0.0, 0.0, 0.0, 1.0], scale = [12.0, 1.0, 12.0] }
+
+[nodes.kind.mesh]
+mesh = "00000000-0000-4000-8000-0000000000a2"
+selected_variant = "00000000-0000-4000-8000-0000000000f2"
+
+[[nodes.kind.mesh.material_variants]]
+id = "00000000-0000-4000-8000-0000000000f2"
+name = "ground"
+
+[nodes.kind.mesh.material_variants.instance]
+asset = "00000000-0000-4000-8000-0000000000b2"
+
+[nodes.kind.mesh.material_variants.instance.inline]
+base_color = [0.10, 0.14, 0.20, 1.0]
+metallic = 0.0
+roughness = 0.85
+emissive = [0.0, 0.0, 0.0]
+double_sided = false
+vertex_colors_enabled = false
+shading = "pbr"
+
+[[nodes]]
+id = "00000000-0000-4000-8000-000000000003"
+name = "Ball"
+# Diameter 1, resting on the ground.
+transform = { translation = [0.0, 0.5, 0.0], rotation = [0.0, 0.0, 0.0, 1.0], scale = [1.0, 1.0, 1.0] }
+
+[nodes.kind.mesh]
+mesh = "00000000-0000-4000-8000-0000000000a1"
+selected_variant = "00000000-0000-4000-8000-0000000000f1"
+
+[[nodes.kind.mesh.material_variants]]
+id = "00000000-0000-4000-8000-0000000000f1"
+name = "ball"
+
+[nodes.kind.mesh.material_variants.instance]
+asset = "00000000-0000-4000-8000-0000000000b1"
+
+[nodes.kind.mesh.material_variants.instance.inline]
+base_color = [0.80, 0.07, 0.05, 1.0]
+metallic = 0.0
+roughness = 0.35
+emissive = [0.0, 0.0, 0.0]
+double_sided = false
+vertex_colors_enabled = false
+shading = "pbr"
+
+# A band around the ball, so that you can see it roll. It is a CHILD of the
+# ball: the app only moves "Ball", and this follows.
+[[nodes.children]]
+id = "00000000-0000-4000-8000-000000000005"
+name = "Ball Band"
+transform = { translation = [0.0, 0.0, 0.0], rotation = [0.0, 0.0, 0.0, 1.0], scale = [1.0, 1.0, 1.0] }
+
+[nodes.children.kind.mesh]
+mesh = "00000000-0000-4000-8000-0000000000a3"
+selected_variant = "00000000-0000-4000-8000-0000000000f3"
+
+[[nodes.children.kind.mesh.material_variants]]
+id = "00000000-0000-4000-8000-0000000000f3"
+name = "band"
+
+[nodes.children.kind.mesh.material_variants.instance]
+asset = "00000000-0000-4000-8000-0000000000b3"
+
+[nodes.children.kind.mesh.material_variants.instance.inline]
+base_color = [0.95, 0.93, 0.88, 1.0]
+metallic = 0.0
+roughness = 0.5
+emissive = [0.0, 0.0, 0.0]
+double_sided = false
+vertex_colors_enabled = false
+shading = "pbr"
+
+[[nodes]]
+id = "00000000-0000-4000-8000-000000000004"
+name = "Camera"
+# Above and behind the ball's start, looking down at the middle of the ground
+# (pitched 30° down around X).
+transform = { translation = [0.0, 6.0, 10.4], rotation = [-0.2588, 0.0, 0.0, 0.9659], scale = [1.0, 1.0, 1.0] }
+
+[nodes.kind.camera]
+projection = { perspective = { fov_y_rad = 0.87 } }
+near = 0.1
+far = 200.0

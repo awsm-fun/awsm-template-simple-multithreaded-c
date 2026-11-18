@@ -1,0 +1,88 @@
+# The render worker: awsm-renderer on an OffscreenCanvas, driven by the bridge
+# block that lives in the app's memory (see ../app/src/bridge.h).
+#
+# This is a standalone crate, not a workspace member: it is built with plain
+# `cargo build` on stable Rust, then post-processed by the wasm-bindgen CLI
+# (see ../taskfile/renderer.yml).
+[package]
+name = "renderer"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[lib]
+# A cdylib is what wasm-bindgen consumes: one self-contained .wasm.
+crate-type = ["cdylib"]
+
+[dependencies]
+# ── The renderer and the loader for editor-exported scenes ───────────────────
+#   awsm-renderer              the renderer (re-exports its WebGPU layer as
+#                              `awsm_renderer::core`)
+#   awsm-renderer-scene        the `Scene` type and the `scene.toml` parser
+#   awsm-renderer-scene-loader `load_scene_for_player`; `http` adds the
+#                              ready-made asset source that fetches bundle files
+awsm-renderer = "0.42.0"
+awsm-renderer-scene = "0.42.0"
+awsm-renderer-scene-loader = { version = "0.42.0", features = ["http"] }
+
+# glam types cross the renderer's API, so this must be the renderer's version.
+glam = "0.32"
+
+# Typed, checked access to bytes copied out of the bridge block.
+bytemuck = { version = "1", features = ["derive"] }
+
+# Runs the pipeline warm-up and the scene download side by side.
+futures = "0.3"
+
+# Fetches `scene.toml`. Same version the scene loader uses for its assets.
+gloo-net = { version = "0.6", default-features = false, features = ["http"] }
+
+# ── wasm-bindgen ─────────────────────────────────────────────────────────────
+# These four are released together and the `-sys` crates pin their
+# wasm-bindgen exactly, so they move as one set. wasm-bindgen itself must match
+# the installed `wasm-bindgen` CLI version exactly, or the CLI refuses the
+# .wasm. To upgrade: bump all four here and install the matching CLI.
+wasm-bindgen = "=0.2.126"
+wasm-bindgen-futures = "=0.4.76"
+js-sys = "=0.3.103"
+
+# ── logging to the browser console ───────────────────────────────────────────
+tracing = "0.1"
+tracing-subscriber = "0.3"
+tracing-web = "0.1"
+
+[dependencies.web-sys]
+version = "=0.3.103"
+features = [
+    "console",
+    "DedicatedWorkerGlobalScope",
+    # The adapter facts the page sizes the canvas with (report_gpu_info in
+    # src/render.rs): software fallback or not, largest 2D texture.
+    "Gpu",
+    "GpuAdapter",
+    "GpuAdapterInfo",
+    "GpuSupportedLimits",
+    "OffscreenCanvas",
+    "Performance",
+    "RequestCache",
+]
+
+# `task renderer:dev`, which `task dev` runs on every save. Our own crate
+# stays unoptimized so it rebuilds in a couple of seconds; the dependencies
+# (awsm-renderer does the real per-frame work) are built once at full
+# optimization, otherwise frame times are unusable.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.dev]
+# wasm-bindgen drops DWARF sections, and browser stack traces come from the
+# wasm name section instead, so generating debug info would only slow linking.
+debug = false
+
+# `task renderer:release`. Size-optimized with whole-program LTO: the module is
+# several MB and is downloaded on every cold visit.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1

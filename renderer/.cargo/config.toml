@@ -1,0 +1,27 @@
+# Cargo reads this file when it is run from inside `renderer/`.
+
+[build]
+# The crate only makes sense in a browser, so `cargo build`, `cargo check` and
+# `cargo clippy` all target wasm without needing `--target`.
+target = "wasm32-unknown-unknown"
+
+[target.wasm32-unknown-unknown]
+# web-sys keeps its WebGPU bindings behind this cfg until the spec is final.
+# The renderer cannot compile without them.
+#
+# Careful when running cargo by hand: a RUSTFLAGS environment variable does not
+# add to this list, it REPLACES it. If you have one set, the cfg is gone and
+# the build fails with errors about missing `Gpu…` types; add
+# `--cfg=web_sys_unstable_apis` to it. (`task renderer:*` does that for you.)
+rustflags = ["--cfg=web_sys_unstable_apis"]
+
+# One dependency (`meshopt`) compiles C++ to wasm and needs a clang that can
+# target wasm32, which Apple's clang cannot. `task renderer:*` points the build
+# at Emscripten's bundled LLVM automatically. If you run cargo directly (or use
+# rust-analyzer), export these yourself first:
+#
+#   CC_wasm32_unknown_unknown=<llvm>/bin/clang
+#   CXX_wasm32_unknown_unknown=<llvm>/bin/clang++
+#   AR_wasm32_unknown_unknown=<llvm>/bin/llvm-ar
+#
+# where <llvm>/bin is what `em-config LLVM_ROOT` prints.

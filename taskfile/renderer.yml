@@ -1,0 +1,205 @@
+# The render worker: builds the Rust crate in renderer/ into dist/renderer/.
+#
+# A build is a short pipeline:
+#
+#   cargo build     Rust  →  renderer/target/wasm32-unknown-unknown/<profile>/renderer.wasm
+#   wasm-bindgen    that  →  dist/renderer/renderer_bg.wasm + renderer.js (its JS glue)
+#   wasm-opt        shrinks renderer_bg.wasm in place (release only)
+#   copy            renderer/web/worker.js  →  dist/renderer/worker.js
+#   stamp           dist/renderer.stamp, which tells the dev server to reload
+#
+# Two profiles (see renderer/Cargo.toml):
+#
+#   dev       this crate unoptimized, its dependencies optimized, no wasm-opt.
+#             Rebuilds after an edit in seconds. `task dev` uses it.
+#   release   everything optimized for size, LTO, wasm-opt. Minutes; `task
+#             build` uses it.
+#
+# The first build of either compiles awsm-renderer and its dependencies, which
+# takes several minutes. Cargo caches that in renderer/target/.
+version: "3"
+
+vars:
+  RENDERER_SRC: "{{.ROOT_DIR}}/renderer"
+  RENDERER_OUT: "{{.ROOT_DIR}}/dist/renderer"
+  RENDERER_STAMP: "{{.ROOT_DIR}}/dist/renderer.stamp"
+  RENDERER_TARGET: "{{.ROOT_DIR}}/renderer/target/wasm32-unknown-unknown"
+
+  # wasm-opt has to be told which post-MVP wasm features the module uses, or it
+  # rejects the first instruction it does not expect. This is exactly the set
+  # stable rustc turns on by default for wasm32-unknown-unknown (check with
+  # `rustc --print cfg --target wasm32-unknown-unknown`), plus the two
+  # sub-features LLVM implies with them. Every browser that has WebGPU has all
+  # of these. `--all-features` is deliberately not used: it would also let
+  # wasm-opt emit things (threads, GC, …) that no flag here asked for.
+  RENDERER_WASM_FEATURES: >-
+    --enable-bulk-memory
+    --enable-bulk-memory-opt
+    --enable-call-indirect-overlong
+    --enable-multivalue
+    --enable-mutable-globals
+    --enable-nontrapping-float-to-int
+    --enable-reference-types
+    --enable-sign-ext
+
+tasks:
+  dev:
+    desc: "Renderer: incremental dev build into dist/renderer, then dist/renderer.stamp"
+    cmds:
+      - task: cargo
+        vars: { ARGS: "build" }
+      - task: bindgen-dev
+      - task: finish
+        vars: { PROFILE: dev }
+
+  release:
+    desc: "Renderer: optimized build into dist/renderer, then dist/renderer.stamp"
+    preconditions:
+      - sh: command -v wasm-opt >/dev/null
+        msg: "wasm-opt not found. It is part of Binaryen: `brew install binaryen` (macOS) or `apt install binaryen` (Linux)."
+    cmds:
+      - task: cargo
+        vars: { ARGS: "build --release" }
+      - task: bindgen
+        vars: { PROFILE: release }
+      # -Os like the crate's own release profile: the module is downloaded on
+      # every cold visit, and its per-frame work is small.
+      - >-
+        wasm-opt -Os {{.RENDERER_WASM_FEATURES}}
+        "{{.RENDERER_OUT}}/renderer_bg.wasm"
+        -o "{{.RENDERER_OUT}}/renderer_bg.wasm"
+      - task: finish
+        vars: { PROFILE: release }
+
+  check:
+    desc: "Renderer: cargo check, clippy with warnings as errors, and a formatting check"
+    dir: "{{.RENDERER_SRC}}"
+    cmds:
+      - task: cargo
+        vars: { ARGS: "check" }
+      - task: cargo
+        vars: { ARGS: "clippy -- -D warnings" }
+      - cargo fmt --check
+
+  fmt:
+    desc: "Renderer: format the Rust sources"
+    dir: "{{.RENDERER_SRC}}"
+    cmds:
+      - cargo fmt
+
+  clean:
+    desc: "Renderer: remove cargo's target directory and the built files in dist"
+    cmds:
+      - rm -rf "{{.RENDERER_SRC}}/target" "{{.RENDERER_OUT}}" "{{.RENDERER_STAMP}}"
+
+  # ── building blocks ────────────────────────────────────────────────────────
+
+  # Runs `cargo {{.ARGS}}` in renderer/ with a C/C++ toolchain that can target
+  # wasm.
+  #
+  # One dependency (`meshopt`, mesh decompression) is C++ that cargo compiles
+  # to wasm with whatever compiler the `cc` crate finds. Apple's clang cannot
+  # target wasm; Emscripten's bundled LLVM can, and Emscripten is needed for
+  # the app anyway, so that is the default. `em-config LLVM_ROOT` prints its
+  # bin directory.
+  #
+  # To use another toolchain, export CC_wasm32_unknown_unknown,
+  # CXX_wasm32_unknown_unknown and AR_wasm32_unknown_unknown before running
+  # task; each one that is set is left as it is. (`cc` reads the name with
+  # dashes or with underscores. A shell can only export the underscore form,
+  # which is why both are looked up here, with `printenv`.)
+  cargo:
+    internal: true
+    dir: "{{.RENDERER_SRC}}"
+    requires:
+      vars: [ARGS]
+    vars:
+      RENDERER_LLVM:
+        sh: em-config LLVM_ROOT 2>/dev/null || true
+      RENDERER_CC:
+        sh: printenv CC_wasm32-unknown-unknown || printenv CC_wasm32_unknown_unknown || echo "{{.RENDERER_LLVM}}/clang"
+      RENDERER_CXX:
+        sh: printenv CXX_wasm32-unknown-unknown || printenv CXX_wasm32_unknown_unknown || echo "{{.RENDERER_LLVM}}/clang++"
+      RENDERER_AR:
+        sh: printenv AR_wasm32-unknown-unknown || printenv AR_wasm32_unknown_unknown || echo "{{.RENDERER_LLVM}}/llvm-ar"
+    env:
+      CC_wasm32-unknown-unknown: "{{.RENDERER_CC}}"
+      CXX_wasm32-unknown-unknown: "{{.RENDERER_CXX}}"
+      AR_wasm32-unknown-unknown: "{{.RENDERER_AR}}"
+    preconditions:
+      - sh: '"{{.RENDERER_CC}}" --print-targets 2>/dev/null | grep -q wasm32'
+        msg: |
+          No C compiler that can target wasm32 (tried "{{.RENDERER_CC}}").
+          The renderer's `meshopt` dependency needs one. Either install Emscripten,
+          whose bundled LLVM is used automatically (`em-config LLVM_ROOT` must work):
+              brew install emscripten
+          or point the build at a wasm-capable LLVM yourself:
+              export CC_wasm32_unknown_unknown=/path/to/llvm/bin/clang
+              export CXX_wasm32_unknown_unknown=/path/to/llvm/bin/clang++
+              export AR_wasm32_unknown_unknown=/path/to/llvm/bin/llvm-ar
+    cmds:
+      # The two assignments apply to this one command and win over whatever
+      # the caller's environment holds:
+      #   RUSTFLAGS         an environment RUSTFLAGS REPLACES the rustflags in
+      #                     renderer/.cargo/config.toml, and without the cfg
+      #                     set there the WebGPU bindings do not exist. So the
+      #                     cfg is added to whatever RUSTFLAGS already holds.
+      #   CARGO_TARGET_DIR  the `bindgen` task below reads cargo's output from
+      #                     renderer/target; pin it there even if the caller
+      #                     redirects cargo's target directory globally.
+      - >-
+        RUSTFLAGS="${RUSTFLAGS:-} --cfg=web_sys_unstable_apis"
+        CARGO_TARGET_DIR="{{.RENDERER_SRC}}/target"
+        cargo {{.ARGS}}
+
+  # Turns cargo's .wasm into what the browser loads: `renderer_bg.wasm` plus
+  # `renderer.js`, an ES module (`--target web`) that instantiates it and
+  # exposes the Rust entry points. renderer/web/worker.js imports that module.
+  bindgen:
+    internal: true
+    requires:
+      vars: [PROFILE]
+    vars:
+      BINDGEN_PIN:
+        sh: sed -n 's/^wasm-bindgen = "=\(.*\)"$/\1/p' "{{.RENDERER_SRC}}/Cargo.toml"
+    preconditions:
+      - sh: command -v wasm-bindgen >/dev/null
+        msg: |
+          wasm-bindgen not found. Install the CLI at exactly the version of the
+          `wasm-bindgen` crate pinned in renderer/Cargo.toml:
+              cargo install wasm-bindgen-cli --locked --version {{.BINDGEN_PIN}}
+    cmds:
+      # From here until `finish`, dist/renderer is half-written: without a
+      # stamp, nothing can mistake it for a finished build.
+      - rm -f "{{.RENDERER_STAMP}}"
+      - mkdir -p "{{.RENDERER_OUT}}"
+      - >-
+        wasm-bindgen --target web --no-typescript
+        --out-name renderer
+        --out-dir "{{.RENDERER_OUT}}"
+        "{{.RENDERER_TARGET}}/{{.PROFILE}}/renderer.wasm"
+
+  # The dev build's wasm-bindgen step, skipped when dist/ already holds the
+  # output of this very dev build (so starting `task dev` with nothing changed
+  # costs a cargo no-op and nothing else). The stamp records which profile
+  # filled dist/renderer, so a release build left there is never mistaken for
+  # an up-to-date dev one.
+  bindgen-dev:
+    internal: true
+    status:
+      - grep -q '^dev ' "{{.RENDERER_STAMP}}"
+      - test "{{.RENDERER_OUT}}/renderer_bg.wasm" -nt "{{.RENDERER_TARGET}}/debug/renderer.wasm"
+    cmds:
+      - task: bindgen
+        vars: { PROFILE: debug }
+
+  # Adds the worker's entry script, then writes the stamp ("<profile> <when>").
+  # The stamp comes last on purpose: the dev server watches it, and must only
+  # reload the page once every file of the build is in place.
+  finish:
+    internal: true
+    requires:
+      vars: [PROFILE]
+    cmds:
+      - cp "{{.RENDERER_SRC}}/web/worker.js" "{{.RENDERER_OUT}}/worker.js"
+      - echo "{{.PROFILE}} $(date -u +%Y-%m-%dT%H:%M:%SZ)" > "{{.RENDERER_STAMP}}"

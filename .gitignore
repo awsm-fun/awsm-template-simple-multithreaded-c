@@ -1,0 +1,15 @@
+# Build output
+dist/
+app/build/
+renderer/target/
+
+# Task's cache
+.task/
+
+# Editor / OS
+.cache/
+.DS_Store
+
+# Local tooling
+.claude/
+.env

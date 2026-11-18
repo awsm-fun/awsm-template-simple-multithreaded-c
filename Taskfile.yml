@@ -1,0 +1,148 @@
+# Entry point for every workflow. This file only wires things together; the
+# actual steps live in taskfile/, one file per part of the project:
+#
+#   taskfile/app.yml       app:*       the C app (CMake presets in app/)
+#   taskfile/renderer.yml  renderer:*  the Rust renderer (renderer/)
+#   taskfile/dom.yml       dom:*       the page (dom/)
+#   taskfile/media.yml     media:*     the scene bundle
+#   taskfile/dev.yml       dev:*       dev server + file watchers
+#
+# Everything is built into dist/, which is exactly what gets deployed. Each
+# build task writes its dist/<name>.stamp LAST; the dev server watches those
+# stamps to know when to swap the app or reload the page.
+#
+# Run `task` to list the tasks. Variables can be set on the command line,
+# e.g. `task dev PORT=9000 OPEN=` or `task build COI=0`.
+version: '3'
+
+vars:
+  PORT: '8000'
+  # How the page follows an app rebuild in `task dev`: `swap` replaces just the
+  # app worker (the renderer keeps its loaded scene); `page` reloads the page.
+  RELOAD: swap
+  # Opens the browser when serving. `OPEN=` turns it off.
+  OPEN: --open
+  # The COOP/COEP service-worker shim (tools/coi-serviceworker.js) lets the
+  # site run on static hosts that cannot send those headers (GitHub Pages, a
+  # CDN bucket). `task build` includes it; `task build COI=0` leaves it out,
+  # for a host you have configured to send the headers. Dev builds never
+  # include it, because the dev server sends the headers itself.
+  COI: ''
+
+includes:
+  app: ./taskfile/app.yml
+  renderer: ./taskfile/renderer.yml
+  dom: ./taskfile/dom.yml
+  media: ./taskfile/media.yml
+  dev: ./taskfile/dev.yml
+
+tasks:
+  default:
+    desc: List the tasks
+    silent: true
+    cmds:
+      - task --list
+
+  setup:
+    desc: Check the toolchain (with install hints), then configure the C build so your editor (clangd) works
+    cmds:
+      - |
+        missing=0
+        need() {
+          if command -v "$1" >/dev/null 2>&1; then
+            printf '  ok       %s\n' "$1"
+          else
+            printf '  MISSING  %-13s %s\n' "$1" "$2"
+            missing=1
+          fi
+        }
+        want() {
+          if command -v "$1" >/dev/null 2>&1; then
+            printf '  ok       %s\n' "$1"
+          else
+            printf '  optional %-13s %s\n' "$1" "$2"
+          fi
+        }
+        echo "Toolchain:"
+        need cmake        "brew install cmake"
+        need ninja        "brew install ninja"
+        need emcc         "brew install emscripten   (or emsdk: https://emscripten.org)"
+        need node         "brew install node         (18 or newer)"
+        need watchexec    "brew install watchexec"
+        need cargo        "install Rust: https://rustup.rs"
+        # The CLI must be exactly the version of the crate pinned in Cargo.toml.
+        bindgen_pin=$(sed -n 's/^wasm-bindgen = "=\(.*\)"$/\1/p' renderer/Cargo.toml)
+        need wasm-bindgen "cargo install wasm-bindgen-cli --locked --version $bindgen_pin"
+        need wasm-opt     "brew install binaryen"
+        want clang-format "brew install clang-format  (for task fmt)"
+        if command -v rustup >/dev/null 2>&1; then
+          if rustup target list --installed | grep -q '^wasm32-unknown-unknown$'; then
+            printf '  ok       %s\n' "rust target wasm32-unknown-unknown"
+          else
+            printf '  MISSING  %-13s %s\n' "wasm32 target" "rustup target add wasm32-unknown-unknown"
+            missing=1
+          fi
+        fi
+        if [ "$missing" -ne 0 ]; then
+          echo "Install the missing tools above, then run: task setup"
+          exit 1
+        fi
+      - task: app:setup
+
+  build:
+    desc: Release build of everything into a fresh dist/ (deployable to any static host as it is)
+    cmds:
+      - rm -rf dist
+      - mkdir -p dist
+      - task: renderer:release
+      - task: app:release
+      - task: media:build
+      # The release build includes the COOP/COEP shim unless COI=0 (see `vars`).
+      - task: dom:build
+        vars: { COI: '{{if eq .COI "0"}}0{{else}}1{{end}}' }
+
+  dev:
+    desc: 'Build, serve at http://127.0.0.1:{{.PORT}}, and on every save rebuild just the part that changed (app/ hot-swaps; the rest reloads the page)'
+    preconditions:
+      - sh: command -v watchexec
+        msg: 'watchexec not found. Install it with: brew install watchexec'
+      - sh: command -v node
+        msg: 'node not found. Install it with: brew install node'
+    cmds:
+      # Dev builds of everything. Each of these is incremental, so when
+      # nothing changed since the last run this takes a second or two.
+      - task: renderer:dev
+      - task: media:build
+      - task: dom:build
+      - task: app:dev
+      - task: dev:watch
+
+  serve:
+    desc: 'Release build, then serve it at http://127.0.0.1:{{.PORT}} (no watching)'
+    cmds:
+      - task: build
+      - task: dev:server
+
+  test:
+    desc: Build and run the app tests (wasm, under node), including the bridge layout check
+    cmds:
+      - task: app:test
+
+  check:
+    desc: 'Everything CI runs: clean configure + build + test of the app (dev and release), and the renderer checks'
+    cmds:
+      - task: app:check
+      - task: renderer:check
+
+  fmt:
+    desc: Format the C and Rust sources
+    cmds:
+      - task: app:fmt
+      - task: renderer:fmt
+
+  clean:
+    desc: Delete all build output (dist/, app/build/, renderer/target/)
+    cmds:
+      - task: app:clean
+      - task: renderer:clean
+      - rm -rf dist

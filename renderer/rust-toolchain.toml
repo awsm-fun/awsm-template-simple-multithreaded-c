@@ -1,0 +1,8 @@
+# Stable Rust is enough: the renderer is an ordinary single-threaded wasm
+# module. It reaches the app's shared memory through JS typed arrays, so it
+# needs none of the nightly machinery (build-std, atomics) that Rust wasm
+# threads require.
+[toolchain]
+channel = "stable"
+targets = ["wasm32-unknown-unknown"]
+components = ["clippy", "rustfmt"]

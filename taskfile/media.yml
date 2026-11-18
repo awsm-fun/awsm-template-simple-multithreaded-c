@@ -1,0 +1,21 @@
+# Static assets: the scene bundle the renderer loads, and the Basis Universal
+# transcoder it uses to decode KTX2 textures. (The demo scene has no textures,
+# so the transcoder is never fetched; a scene exported from the awsm editor
+# usually has some.)
+#
+#   media/bundle/               → dist/bundle/         scene.toml (+ assets/)
+#   renderer/vendored/basis/    → dist/vendor/basis/   basis_transcoder.{js,wasm}
+#   renderer/vendored/workers/  → dist/workers/        basis-worker.js
+version: '3'
+
+tasks:
+  build:
+    desc: Copy the scene bundle and the Basis transcoder into dist/, then dist/media.stamp
+    dir: '{{.ROOT_DIR}}'
+    cmds:
+      - rm -rf dist/bundle dist/vendor/basis dist/workers
+      - mkdir -p dist/vendor/basis dist/workers
+      - cp -R media/bundle dist/bundle
+      - cp renderer/vendored/basis/basis_transcoder.js renderer/vendored/basis/basis_transcoder.wasm renderer/vendored/basis/LICENSE-basis_universal dist/vendor/basis/
+      - cp renderer/vendored/workers/basis-worker.js dist/workers/
+      - touch dist/media.stamp

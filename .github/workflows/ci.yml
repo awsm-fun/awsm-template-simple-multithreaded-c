@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    # Status-check name matches the sibling awsm repos.
+    name: test-ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # Stable Rust: the renderer is an ordinary single-threaded wasm module
+      # (the shared memory is the C app's), so there is no nightly or
+      # build-std here.
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+
+      # Compiles the C app (and its tests) to wasm, and supplies the
+      # wasm-capable clang that one of the renderer's dependencies needs (see
+      # taskfile/renderer.yml).
+      - name: Install Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: latest
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Install Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: renderer
+          cache-on-failure: true
+
+      # The app: a clean configure, build and test of both presets (the tests
+      # are wasm and run under node, which the runner already has; they
+      # include the check that the Rust and JS mirrors of bridge.h match it).
+      # The renderer: check + clippy + rustfmt.
+      - name: Check
+        run: task check

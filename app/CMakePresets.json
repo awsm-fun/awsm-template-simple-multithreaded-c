@@ -1,0 +1,52 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "wasm",
+      "displayName": "WebAssembly (release)",
+      "description": "Optimized (-O3) build: build/wasm/app.js + app.wasm. `task app:release` builds it and copies it into dist/app/.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "${sourceDir}/cmake/EmscriptenToolchain.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_COLOR_DIAGNOSTICS": "ON"
+      }
+    },
+    {
+      "name": "wasm-dev",
+      "displayName": "WebAssembly (dev)",
+      "description": "Unoptimized, fast-linking build with runtime assertions: build/wasm-dev/app.js + app.wasm. `task app:dev` builds it and copies it into dist/app/; the tests and the editor (clangd) use this tree too.",
+      "inherits": "wasm",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "wasm", "configurePreset": "wasm" },
+    { "name": "wasm-dev", "configurePreset": "wasm-dev" }
+  ],
+  "testPresets": [
+    { "name": "wasm", "configurePreset": "wasm", "output": { "outputOnFailure": true } },
+    { "name": "wasm-dev", "configurePreset": "wasm-dev", "output": { "outputOnFailure": true } }
+  ],
+  "workflowPresets": [
+    {
+      "name": "wasm",
+      "steps": [
+        { "type": "configure", "name": "wasm" },
+        { "type": "build", "name": "wasm" },
+        { "type": "test", "name": "wasm" }
+      ]
+    },
+    {
+      "name": "wasm-dev",
+      "steps": [
+        { "type": "configure", "name": "wasm-dev" },
+        { "type": "build", "name": "wasm-dev" },
+        { "type": "test", "name": "wasm-dev" }
+      ]
+    }
+  ]
+}

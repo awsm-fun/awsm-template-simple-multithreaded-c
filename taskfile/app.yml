@@ -1,0 +1,96 @@
+# The C app (app/). Thin wrappers: all build configuration lives in
+# app/CMakeLists.txt and app/CMakePresets.json, so `cmake --preset ...` in
+# app/ does exactly what these do. Everything is WebAssembly, built with
+# Emscripten; there are two presets, each with its own tree app/build/<preset>:
+#
+#   wasm-dev   unoptimized, runtime assertions, links in a moment. What
+#              `task dev` and the tests use, and what your editor reads.
+#   wasm       optimized (-O3). What `task build` ships.
+#
+# dist/app/ (what the page loads) is filled by the `dev` and `release` tasks
+# below, by copying from the tree they just built.
+version: '3'
+
+tasks:
+  # Configure a preset once; afterwards Ninja re-runs CMake by itself whenever
+  # CMakeLists.txt changes.
+  configure:
+    internal: true
+    dir: '{{.ROOT_DIR}}/app'
+    requires:
+      vars: [PRESET]
+    preconditions: &emcc
+      - sh: command -v emcc
+        msg: 'emcc not found. Install it with: brew install emscripten (or emsdk), then run: task setup'
+    cmds:
+      - cmake --preset {{.PRESET}}
+    status:
+      - test -f build/{{.PRESET}}/build.ninja
+
+  setup:
+    desc: Configure the wasm-dev preset, which writes the compile_commands.json clangd reads
+    dir: '{{.ROOT_DIR}}/app'
+    preconditions: *emcc
+    cmds:
+      - cmake --preset wasm-dev
+
+  # Builds one preset's `app` target and installs it as dist/app/: the two
+  # Emscripten outputs plus the worker script that loads them. The stamp is
+  # written last, because the dev server tells the page to swap the app
+  # worker as soon as it changes.
+  into-dist:
+    internal: true
+    dir: '{{.ROOT_DIR}}/app'
+    requires:
+      vars: [PRESET]
+    cmds:
+      - task: configure
+        vars: { PRESET: '{{.PRESET}}' }
+      - cmake --build --preset {{.PRESET}} --target app
+      - mkdir -p ../dist/app
+      - cp build/{{.PRESET}}/app.js build/{{.PRESET}}/app.wasm web/worker.js ../dist/app/
+      - touch ../dist/app.stamp
+
+  dev:
+    desc: Dev build of the app (fast link, runtime assertions), copied into dist/app/, then dist/app.stamp
+    cmds:
+      - task: into-dist
+        vars: { PRESET: wasm-dev }
+
+  release:
+    desc: Optimized (-O3) build of the app, copied into dist/app/, then dist/app.stamp
+    cmds:
+      - task: into-dist
+        vars: { PRESET: wasm }
+
+  test:
+    desc: Build the tests (wasm-dev) and run them under node
+    dir: '{{.ROOT_DIR}}/app'
+    cmds:
+      - task: configure
+        vars: { PRESET: wasm-dev }
+      - cmake --build --preset wasm-dev
+      - ctest --preset wasm-dev
+
+  check:
+    desc: 'Clean-slate configure + build + test of both presets (what CI runs)'
+    dir: '{{.ROOT_DIR}}/app'
+    preconditions: *emcc
+    cmds:
+      - cmake --workflow --preset wasm-dev --fresh
+      - cmake --workflow --preset wasm --fresh
+
+  fmt:
+    desc: Format the C sources with clang-format
+    dir: '{{.ROOT_DIR}}/app'
+    preconditions:
+      - sh: command -v clang-format
+        msg: 'clang-format not found. Install it with: brew install clang-format'
+    cmds:
+      - clang-format -i src/*.c src/*.h tests/*.c tests/*.h
+
+  clean:
+    desc: Delete the C build trees (app/build/)
+    dir: '{{.ROOT_DIR}}/app'
+    cmds:
+      - rm -rf build

@@ -1,0 +1,22 @@
+# The page (dom/): plain files, no build step, copied into dist/ as they are.
+version: '3'
+
+tasks:
+  build:
+    desc: Copy dom/ into dist/, then dist/dom.stamp (COI=1, which `task build` passes, adds the COOP/COEP service-worker shim)
+    dir: '{{.ROOT_DIR}}'
+    cmds:
+      - mkdir -p dist
+      - cp -R dom/. dist/
+      # Shim for static hosts that cannot send the COOP/COEP headers
+      # (e.g. GitHub Pages): copy it next to the page and swap the marker
+      # comment in index.html for its <script> tag. It must run before
+      # main.js, which is why it sits in <head> as a classic script.
+      - |
+        if [ "{{.COI}}" = "1" ]; then
+          cp tools/coi-serviceworker.js dist/
+          sed 's|<!-- coi-serviceworker[^>]*-->|<script src="coi-serviceworker.js"></script>|' dom/index.html > dist/index.html
+        else
+          rm -f dist/coi-serviceworker.js
+        fi
+      - touch dist/dom.stamp

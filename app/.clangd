@@ -1,0 +1,29 @@
+# Editor support (clangd). Paths are relative to this file (app/).
+#
+# The real compile flags come from the wasm-dev build tree's
+# compile_commands.json: Emscripten's target, sysroot and include paths, so
+# <emscripten.h> resolves and the code is checked as the wasm it will become.
+# `task setup` (and `task dev`) create it.
+#
+# Everything under `Add` is a fallback for files opened BEFORE the project was
+# ever configured: they still parse as C23 (nullptr, bool, constexpr, …)
+# instead of lighting up with errors. Only Emscripten's own headers need the
+# compile database. Once it exists these flags just repeat what it says.
+CompileFlags:
+  CompilationDatabase: build/wasm-dev
+  Add: [-std=gnu23]
+
+---
+# A lone .h has no compile command of its own, and clangd would otherwise have
+# to guess what language it is.
+If:
+  PathMatch: .*\.h
+CompileFlags:
+  Add: [-xc-header]
+
+---
+# The tests include the app's headers as "app.h", "bridge.h".
+If:
+  PathMatch: tests/.*
+CompileFlags:
+  Add: [-I../src]

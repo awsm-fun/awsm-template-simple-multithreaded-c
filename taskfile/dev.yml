@@ -1,0 +1,81 @@
+# The dev server and the file watchers. Started together by the root `dev`
+# task; `server` is also usable on its own to serve whatever is in dist/.
+#
+# How a change reaches the page: a watcher sees a save and rebuilds ONLY its
+# part; that build task writes its dist/<name>.stamp last; the server sees the
+# stamp change and tells the page what to do:
+#
+#   you save under   the watcher runs      stamp            the page
+#   app/             task app:dev          app.stamp        swaps the app worker
+#   renderer/        task renderer:dev     renderer.stamp   reloads
+#   dom/             task dom:build        dom.stamp        reloads
+#   media/ *         task media:build      media.stamp      reloads
+#
+#   * and renderer/vendored/, the texture transcoder that task also copies
+#
+# The watched paths are disjoint and none of them contains build output
+# (dist/, app/build/, renderer/target/), so a save rebuilds exactly one part
+# and no build can set off another: iterating on the C app never runs cargo.
+#
+# If a build fails, no stamp is written: the page keeps running the last good
+# build, the error is in this terminal, and every watcher keeps watching.
+version: '3'
+
+vars:
+  # --postpone: the dev task has just built everything, so wait for a change.
+  # --on-busy-update=queue: a save that lands while a build is running starts
+  # one more build afterwards (by default watchexec would ignore it, and the
+  # page would be left showing the older code).
+  WATCH: watchexec --postpone --on-busy-update=queue
+
+tasks:
+  server:
+    desc: 'Serve dist/ at http://127.0.0.1:{{.PORT}} with COOP/COEP headers and live reload (no build)'
+    dir: '{{.ROOT_DIR}}'
+    preconditions:
+      - sh: command -v node
+        msg: 'node not found. Install it with: brew install node'
+    cmds:
+      - node tools/dev-server.mjs --root dist --port {{.PORT}} --reload={{.RELOAD}} {{.OPEN}}
+
+  watch:
+    internal: true
+    failfast: true # if one piece dies (e.g. the port is taken), stop them all
+    deps: [server, watch-app, watch-renderer, watch-dom, watch-media]
+
+  # (Not CMakePresets.json: a preset is only read when a build tree is first
+  # configured. After changing one, run `task app:clean`.)
+  watch-app:
+    internal: true
+    dir: '{{.ROOT_DIR}}'
+    cmds:
+      - >-
+        {{.WATCH}}
+        --watch app/src --watch app/web --watch app/cmake
+        --watch app/CMakeLists.txt
+        -- task app:dev
+
+  # Cargo's output (renderer/target) and Cargo.lock, which cargo itself
+  # rewrites, are not under any of these paths, so a build never retriggers
+  # itself.
+  watch-renderer:
+    internal: true
+    dir: '{{.ROOT_DIR}}'
+    cmds:
+      - >-
+        {{.WATCH}}
+        --watch renderer/src --watch renderer/web
+        --watch renderer/Cargo.toml
+        -- task renderer:dev
+
+  watch-dom:
+    internal: true
+    dir: '{{.ROOT_DIR}}'
+    cmds:
+      - '{{.WATCH}} --watch dom -- task dom:build'
+
+  watch-media:
+    internal: true
+    dir: '{{.ROOT_DIR}}'
+    cmds:
+      - '{{.WATCH}} --watch media --watch renderer/vendored -- task media:build'
