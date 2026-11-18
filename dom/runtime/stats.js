@@ -77,15 +77,19 @@ const REFRESH_INLIER = 0.15;
 const PAUSE_SLACK_MS = 250;
 
 // The groups, top to bottom. `detail`: the bit that asks the other threads to
-// measure this group's breakdown while it is expanded.
+// measure this group's breakdown while it is expanded. `lane`: the group's
+// colour (style.css, --lane-*), shown as a dot on its header and on its row
+// of the frame budget, so that the two pair up at a glance.
 const GROUPS = [
   { id: 'budget', label: 'frame budget' },
   { id: 'display', label: 'display' },
-  { id: 'gpu', label: 'GPU', detail: DETAIL.GPU },
-  { id: 'renderer', label: 'renderer (render worker)', detail: DETAIL.RENDERER },
-  { id: 'app', label: 'app (C, app worker)', detail: DETAIL.APP },
-  { id: 'page', label: 'page (main thread)' },
+  { id: 'gpu', label: 'GPU', detail: DETAIL.GPU, lane: 'gpu' },
+  { id: 'renderer', label: 'renderer (render worker)', detail: DETAIL.RENDERER, lane: 'renderer' },
+  { id: 'app', label: 'app (C, app worker)', detail: DETAIL.APP, lane: 'sim' },
+  { id: 'page', label: 'page (main thread)', lane: 'page' },
 ];
+// A lane's share of the frame budget from which its bar warns.
+const SHARE_WARN = 0.8;
 
 // The renderer's phase that awsm-renderer's own scopes are a breakdown of,
 // and the subgroups those scopes are shown in: by kind, with the prefix the
@@ -154,6 +158,30 @@ function measureRefresh() {
   };
 }
 
+// A lane's dot.
+function dot(lane) {
+  const element = document.createElement('span');
+  element.className = 'stats-dot';
+  element.dataset.lane = lane;
+  return element;
+}
+
+// Fills `element` with a value as it is shown: the numbers bright, and the
+// units and words around them smaller and dimmer.
+function showValue(element, text) {
+  element.replaceChildren(
+    ...text
+      .split(/(<?\d[\d.]*%?)/)
+      .filter((piece) => piece !== '')
+      .map((piece) => {
+        const span = document.createElement('span');
+        span.className = /^<?\d/.test(piece) ? 'stats-num' : 'stats-unit';
+        span.textContent = piece;
+        return span;
+      }),
+  );
+}
+
 // Builds the panel's elements: per group, a header button (label left,
 // headline right) and the rows it shows while expanded. Returns
 // { set(id, headline, rows, bad), detail(), onToggle }.
@@ -166,7 +194,11 @@ function buildGroups(panel) {
     header.type = 'button';
     header.className = 'stats-group';
     const label = document.createElement('span');
+    label.className = 'stats-name';
+    const arrow = document.createElement('span');
+    label.append(arrow, ...(group.lane ? [dot(group.lane)] : []), group.label);
     const headline = document.createElement('span');
+    headline.className = 'stats-value';
     header.append(label, ' ', headline); // the space is for a screen reader
     const rows = document.createElement('div');
     rows.className = 'stats-rows';
@@ -178,7 +210,7 @@ function buildGroups(panel) {
       part.open = open;
       rows.hidden = !open;
       header.setAttribute('aria-expanded', String(open));
-      label.textContent = `${open ? '▾' : '▸'} ${group.label}`;
+      arrow.textContent = open ? '▾ ' : '▸ ';
     };
     setOpen(storedBool(key) === true); // collapsed unless the user opened it
     header.addEventListener('click', () => {
@@ -191,22 +223,35 @@ function buildGroups(panel) {
   }
 
   // `rows`: [label, value] pairs; a third entry indents a row by that many
-  // levels, 1 or 2 (a breakdown of the row above), and a fourth marks it bad
-  // (red).
+  // levels, 1 or 2 (a breakdown of the row above), a fourth marks it bad
+  // (red), and a fifth, { lane, share }, makes it a lane of the frame budget:
+  // the lane's dot, and a bar for its share of the budget.
   view.set = (id, headline, rows = [], bad = false) => {
     const part = parts.get(id);
-    part.headline.textContent = headline;
+    showValue(part.headline, headline);
     part.header.classList.toggle('stats-bad', bad);
     if (!part.open) return;
     part.rows.replaceChildren(
-      ...rows.map(([label, value, level, rowBad]) => {
+      ...rows.map(([label, value, level, rowBad, budget]) => {
         const row = document.createElement('div');
         const nested = ['', ' stats-nested', ' stats-nested stats-nested-2'][Number(level ?? 0)];
         row.className = `stats-row${nested}${rowBad ? ' stats-bad' : ''}`;
         const name = document.createElement('span');
-        name.textContent = label;
+        name.className = 'stats-name';
+        name.append(...(budget ? [dot(budget.lane)] : []), label);
         const figure = document.createElement('span');
-        figure.textContent = value;
+        figure.className = 'stats-value';
+        showValue(figure, value);
+        if (budget) {
+          // The share as a bar too; its colour says how close to the budget.
+          const bar = document.createElement('span');
+          const state = budget.share > 1 ? ' stats-over' : budget.share >= SHARE_WARN ? ' stats-warn' : '';
+          bar.className = `stats-bar${state}`;
+          const fill = document.createElement('span');
+          fill.style.width = `${Math.min(budget.share, 1) * 100}%`;
+          bar.append(fill);
+          figure.prepend(bar);
+        }
         row.append(name, figure);
         return row;
       }),
@@ -320,19 +365,22 @@ export function installStats({ getBridge, onHelp }) {
     // what it uses per frame. They run in parallel, so each must fit the
     // budget on its own, and the headroom is what the largest leaves.
     const lanes = [
-      ['GPU', gpuEma],
-      ['renderer (render worker)', frameWorkEma],
-      ['app (C, app worker)', appFrameEma],
-      ['page (main thread)', pageEma],
+      ['GPU', gpuEma, 'gpu'],
+      ['renderer (render worker)', frameWorkEma, 'renderer'],
+      ['app (C, app worker)', appFrameEma, 'sim'],
+      ['page (main thread)', pageEma, 'page'],
     ].filter(([, ms]) => ms !== null);
     if (periodMs === null || lanes.length === 0) {
       view.set('budget', 'measuring…');
     } else {
       const budget = periodMs.toFixed(1);
       const headroom = periodMs - Math.max(...lanes.map(([, ms]) => ms));
-      const rows = lanes.map(([label, ms]) => [
+      const rows = lanes.map(([label, ms, lane]) => [
         label,
         `${tenths(ms)} / ${budget} ms (${share(ms / periodMs)})`,
+        0,
+        false,
+        { lane, share: ms / periodMs },
       ]);
       if (gpuEma !== null && frameWorkEma !== null) {
         rows.push([
