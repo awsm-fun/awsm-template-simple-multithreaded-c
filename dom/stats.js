@@ -1,34 +1,38 @@
 // stats.js — the stats panel (top right) and the Stats button (bottom left)
 // that shows and hides it.
 //
-// Once a second it samples the counters the app and the renderer keep in the
-// bridge block's stats section (bridge_stats in app/src/bridge.h): no
-// messages, nothing measured here but the display. What it shows:
+// One group per thread, so that every number sits under the thread that
+// spent it, and every number says its unit and what it is per:
 //
-//   display    the display's refresh rate, measured from this thread's own
-//              requestAnimationFrame timestamps (see measureRefresh).
-//   render     frames presented per second, capped by the display.
-//   missed     display refreshes that went by without a new frame, per
-//              second and in total: the renderer was too slow (or uneven)
-//              for the display, which shows as stutter. Exact: the renderer
-//              sums the time between its frames (frame_span_us), and that
-//              time divided by the refresh period is how many refreshes
-//              went by.
-//   gpu time   the GPU's time per frame, from timestamp queries: whether a
-//              frame can make the refresh (8.3 ms at 120 Hz). `n/a` on a GPU
-//              without timestamp queries.
-//   cpu time   the render worker's CPU time per frame.
-//   app time   the app's CPU time per fixed step (app_step and the rest).
-//   app        fixed steps per second (120 when all is well).
-//   app late   frames the renderer drew before the app had published the
-//              moment they show (bridge.h, "Frame pacing"). 0 when all is
-//              well. Red after LATE_WINDOWS samples in a row: a steady
-//              condition, not a one-off such as a tab switch.
+//   display                    the display's refresh rate (measured here, from
+//                              this thread's own animation frames), the frames
+//                              the renderer presented per second, and the
+//                              refreshes that went by without a new frame.
+//   GPU                        the GPU's time per frame, from the renderer's
+//                              timestamp queries (`n/a` without them). Its
+//                              rows are the passes; on GPUs that run passes
+//                              overlapped (Apple's) they add up to more than
+//                              the frame.
+//   renderer (render worker)   the render worker's CPU time per frame.
+//   app (C, app worker)        the app's CPU time per fixed step, its steps
+//                              per second, and the frames the renderer drew
+//                              before the app had published the moment they
+//                              show ("late": bridge.h, "Frame pacing").
+//   page (main thread)         this thread's own work per frame.
 //
-// Rates are counter differences divided by the REAL time between samples
-// (performance.now()), then smoothed: a one-second timer is not really one
-// second apart, and in a background tab it is throttled.
+// A group's header always shows its headline number. Expanding a group shows
+// its breakdown, and only then is the breakdown measured: the page sets a bit
+// in the bridge block (`detail`), and the app and the renderer time their
+// phases and passes only while it is set. A collapsed panel costs nothing.
+//
+// Once a second the panel samples the running totals the app and the renderer
+// keep in the bridge block (bridge_stats and the timing table in
+// app/src/bridge.h): no messages. Every figure is the change in a total
+// divided by the change in what it is per (frames, steps, or REAL seconds:
+// a one-second timer is not exactly a second apart, and is throttled in a
+// background tab), then smoothed.
 
+import { DETAIL, TIMING } from './bridge.js';
 import { STATS_STORAGE_KEY, coarsePointer, storeBool, storedBool } from './settings.js';
 
 const SAMPLE_INTERVAL_MS = 1000;
@@ -40,8 +44,8 @@ const EMA_ALPHA = 0.35;
 // tab was hidden or throttled, and the window measures the stall.
 const MIN_WINDOW_MS = 200;
 const MAX_WINDOW_MS = 3000;
-// The app-late line turns red when the app was late in this many sample
-// windows in a row.
+// The late-frames line turns red when the app was late in this many sample
+// windows in a row: a steady condition, not a one-off such as a tab switch.
 const LATE_WINDOWS = 3;
 // Frames presented after the renderer reports `ready` before anything is
 // counted: start-up (cold caches, the wasm engine still optimizing) reads
@@ -58,6 +62,30 @@ const REFRESH_INLIER = 0.15;
 // contains a pause from before it (a hidden tab, a debugger stop), which is
 // not missed frames: the window is not counted.
 const PAUSE_SLACK_MS = 250;
+
+// The groups, top to bottom. `detail`: the bit that asks the other threads to
+// measure this group's breakdown while it is expanded.
+const GROUPS = [
+  { id: 'display', label: 'display' },
+  { id: 'gpu', label: 'GPU', detail: DETAIL.GPU },
+  { id: 'renderer', label: 'renderer (render worker)', detail: DETAIL.RENDERER },
+  { id: 'app', label: 'app (C, app worker)', detail: DETAIL.APP },
+  { id: 'page', label: 'page (main thread)' },
+];
+
+// The renderer's phase whose time its per-pass rows are a breakdown of.
+const RENDER_PHASE = 'render (encode + submit)';
+
+// A duration with its unit: microseconds below a tenth of a millisecond.
+function duration(ms) {
+  if (ms < 0.09995) {
+    const us = ms * 1000;
+    return `${us < 9.95 ? us.toFixed(1) : us.toFixed(0)} µs`;
+  }
+  return `${ms < 9.995 ? ms.toFixed(2) : ms.toFixed(1)} ms`;
+}
+
+const smooth = (ema, value) => (ema == null ? value : ema + (value - ema) * EMA_ALPHA);
 
 // Measures the display's refresh period from this thread's own animation
 // frames. This thread does little per frame, so it keeps up with the display
@@ -97,43 +125,79 @@ function measureRefresh() {
   };
 }
 
-// One line of the panel: the label in a fixed-width column, then the value.
-const line = (label, value) => `  ${label.padEnd(12)}${value}\n`;
+// Builds the panel's elements: per group, a header button (label left,
+// headline right) and the rows it shows while expanded. Returns
+// { set(id, headline, rows, bad), detail(), onToggle }.
+function buildGroups(panel) {
+  const parts = new Map();
+  const view = { onToggle: () => {} };
+  for (const group of GROUPS) {
+    const key = `${STATS_STORAGE_KEY}_open_${group.id}`;
+    const header = document.createElement('button');
+    header.type = 'button';
+    header.className = 'stats-group';
+    const label = document.createElement('span');
+    const headline = document.createElement('span');
+    header.append(label, headline);
+    const rows = document.createElement('div');
+    rows.className = 'stats-rows';
+    rows.id = `stats-rows-${group.id}`;
+    header.setAttribute('aria-controls', rows.id);
 
-// The panel's first lines, which never change, and what follows them until
-// there are numbers to show.
-const HEAD_MAIN = `workers\n${line('main', 'ui · input')}`;
-const HEAD_STARTING = HEAD_MAIN + line('render', 'starting…') + line('app', 'starting…');
-const HEAD_WARMING = HEAD_MAIN + line('render', 'warming up…') + line('app', 'warming up…');
+    const part = { group, open: false, header, headline, rows };
+    const setOpen = (open) => {
+      part.open = open;
+      rows.hidden = !open;
+      header.setAttribute('aria-expanded', String(open));
+      label.textContent = `${open ? '▾' : '▸'} ${group.label}`;
+    };
+    setOpen(storedBool(key) === true); // collapsed unless the user opened it
+    header.addEventListener('click', () => {
+      setOpen(!part.open);
+      storeBool(key, part.open);
+      view.onToggle();
+    });
+    parts.set(group.id, part);
+    panel.append(header, rows);
+  }
+
+  // `rows`: [label, value] pairs; a third `true` indents a row one level
+  // (a breakdown of the row above), and a fourth marks it bad (red).
+  view.set = (id, headline, rows = [], bad = false) => {
+    const part = parts.get(id);
+    part.headline.textContent = headline;
+    part.header.classList.toggle('stats-bad', bad);
+    if (!part.open) return;
+    part.rows.replaceChildren(
+      ...rows.map(([label, value, nested, rowBad]) => {
+        const row = document.createElement('div');
+        row.className = `stats-row${nested ? ' stats-nested' : ''}${rowBad ? ' stats-bad' : ''}`;
+        const name = document.createElement('span');
+        name.textContent = label;
+        const figure = document.createElement('span');
+        figure.textContent = value;
+        row.append(name, figure);
+        return row;
+      }),
+    );
+  };
+  // The DETAIL bits of the groups that are expanded.
+  view.detail = () => {
+    let bits = 0;
+    for (const part of parts.values()) if (part.open) bits |= part.group.detail ?? 0;
+    return bits;
+  };
+  return view;
+}
 
 // `getBridge()` returns the current app's Bridge (or null while there is
-// none). Returns { markReady() }, to call when the renderer reports `ready`.
+// none). Returns { markReady(), pageFrame(ms) }: call the first when the
+// renderer reports `ready`, the second once per animation frame with the time
+// this thread spent on it.
 export function installStats({ getBridge }) {
   const panel = document.getElementById('stats');
-  const head = document.getElementById('stats-head');
-  const lateLine = document.getElementById('stats-late');
   const button = document.getElementById('stats-btn');
-
-  // Off by default: on a phone the panel covers a lot of the screen. A stored
-  // "open" is only honoured on a desktop; on a touch device the button still
-  // opens it for the session.
-  const setOpen = (open) => {
-    panel.hidden = !open;
-    button.classList.toggle('active', open);
-  };
-  setOpen(!coarsePointer() && storedBool(STATS_STORAGE_KEY) === true);
-  button.addEventListener('click', () => {
-    const open = panel.hidden;
-    setOpen(open);
-    storeBool(STATS_STORAGE_KEY, open);
-  });
-
-  const show = (headText, late = '', bad = false) => {
-    head.textContent = headText;
-    lateLine.textContent = late;
-    lateLine.classList.toggle('stats-bad', bad);
-  };
-  show(HEAD_STARTING);
+  const view = buildGroups(panel);
 
   const refresh = measureRefresh();
   let renderReady = false;
@@ -144,8 +208,9 @@ export function installStats({ getBridge }) {
   let frameWorkEma = null;
   let stepWorkEma = null;
   let gpuEma = null;
+  let pageEma = null;
   // Trusted windows in a row without a single GPU sample: after a few, the
-  // device evidently has no timestamp queries, and the line says so.
+  // device evidently has no timestamp queries, and the group says so.
   let gpuEmptyWindows = 0;
   // Frames the app was late for: the total since counting started, and how
   // many windows in a row had any.
@@ -159,11 +224,121 @@ export function installStats({ getBridge }) {
   let missedTotal = 0;
   // frameCount when counting could first start (see WARMUP_FRAMES).
   let warmFrame = null;
+  // The timing table: each entry's previous reading and its smoothed mean,
+  // by entry.
+  let timingBaseline = new Map();
+  const timingMeans = new Map();
+  // This thread's own work, summed between samples.
+  let pageMs = 0;
+  let pageFrames = 0;
+
+  // The breakdowns are only measured while the panel shows them: tell the
+  // other threads which groups are expanded (none while the panel is hidden).
+  const publishDetail = () => getBridge()?.setDetail(panel.hidden ? 0 : view.detail());
+  view.onToggle = () => {
+    publishDetail();
+    render(); // the rows of a group just opened fill in on the next sample
+  };
+
+  // Off by default: on a phone the panel covers a lot of the screen. A stored
+  // "open" is only honoured on a desktop; on a touch device the button still
+  // opens it for the session.
+  const setOpen = (open) => {
+    panel.hidden = !open;
+    button.classList.toggle('active', open);
+    publishDetail();
+  };
+  setOpen(!coarsePointer() && storedBool(STATS_STORAGE_KEY) === true);
+  button.addEventListener('click', () => {
+    const open = panel.hidden;
+    setOpen(open);
+    storeBool(STATS_STORAGE_KEY, open);
+  });
 
   // A hidden tab runs no frames: never turn that gap into a rate.
   document.addEventListener('visibilitychange', () => {
     baseline = null;
   });
+
+  // What the panel shows until there are numbers.
+  let placeholder = 'starting…';
+  let late = { rate: 0, bad: false };
+
+  // The timing-table rows of one kind: [name, mean in ms], in table order.
+  const timings = (kind) =>
+    [...timingMeans.values()].filter((entry) => entry.kind === kind && entry.ms != null);
+  const slowestFirst = (entries) => entries.sort((a, b) => b.ms - a.ms);
+
+  function render() {
+    if (placeholder) {
+      for (const group of GROUPS) view.set(group.id, group.id === 'display' ? '—' : placeholder);
+      return;
+    }
+    const periodMs = refresh.periodMs();
+    const hz = periodMs === null ? null : `${(1000 / periodMs).toFixed(0)} Hz`;
+    const fps = `${fpsEma.toFixed(0)}`;
+    view.set('display', `${hz ?? 'measuring…'} · ${fps} fps`, [
+      ['refresh rate', hz ?? 'measuring…'],
+      ['frames presented', `${fps} / s`],
+      [
+        'missed frames',
+        missedRate === null ? '—' : `${missedRate.toFixed(0)} / s · ${Math.max(missedTotal, 0)} total`,
+      ],
+    ]);
+
+    let gpu = '—';
+    if (gpuEma !== null) gpu = `${duration(gpuEma)} / frame`;
+    else if (gpuEmptyWindows >= 3) gpu = 'n/a';
+    view.set(
+      'gpu',
+      gpu,
+      slowestFirst(timings(TIMING.GPU_PASS)).map((pass) => [pass.name, `${duration(pass.ms)} / frame`]),
+    );
+
+    // The renderer's phases in the order they run, with its CPU time inside
+    // each pass listed under the phase that encodes them.
+    const rendererRows = [];
+    const passes = slowestFirst(timings(TIMING.RENDERER_PASS));
+    for (const phase of timings(TIMING.RENDERER_PHASE)) {
+      rendererRows.push([phase.name, `${duration(phase.ms)} / frame`]);
+      if (phase.name !== RENDER_PHASE || passes.length === 0) continue;
+      for (const pass of passes) rendererRows.push([pass.name, `${duration(pass.ms)} / frame`, true]);
+      // What render() spends that no pass accounts for: per-frame uploads,
+      // culling, bookkeeping.
+      const inPasses = passes.reduce((sum, pass) => sum + pass.ms, 0);
+      rendererRows.push([
+        'outside the passes',
+        `${duration(Math.max(phase.ms - inPasses, 0))} / frame`,
+        true,
+      ]);
+    }
+    // The renderer's per-pass timers are costly, so it runs them on some
+    // frames only and reports what they add to the average frame: the one
+    // part of the headline that is there because the group is open.
+    for (const overhead of timings(TIMING.RENDERER_OVERHEAD)) {
+      rendererRows.push([`${overhead.name} (only while open)`, `${duration(overhead.ms)} / frame`]);
+    }
+    view.set(
+      'renderer',
+      frameWorkEma === null ? '—' : `${duration(frameWorkEma)} / frame`,
+      rendererRows,
+    );
+
+    view.set(
+      'app',
+      stepWorkEma === null ? '—' : `${duration(stepWorkEma)} / step`,
+      [
+        ['steps', `${stepsEma.toFixed(0)} steps/s`],
+        ['late frames', `${late.rate.toFixed(0)} / s · ${lateTotal} total`, false, late.bad],
+        ...timings(TIMING.APP_PHASE).map((phase) => [phase.name, `${duration(phase.ms)} / step`]),
+      ],
+      late.bad,
+    );
+
+    // All this thread does per frame is in main.js's frame(): one row.
+    const page = pageEma === null ? '—' : `${duration(pageEma)} / frame`;
+    view.set('page', page, [['app events + HUD', page]]);
+  }
 
   function sample() {
     const now = performance.now();
@@ -180,15 +355,24 @@ export function installStats({ getBridge }) {
       missedRate = null;
       missedTotal = 0;
       warmFrame = null;
+      timingBaseline = new Map();
+      timingMeans.clear();
+      publishDetail(); // the new block has not been told yet
     }
     if (!bridge) {
-      show(HEAD_STARTING);
+      placeholder = 'starting…';
+      render();
       return;
     }
 
     const stats = bridge.readStats();
     const previous = baseline;
     baseline = { at: now, ...stats };
+    const previousTimings = timingBaseline;
+    timingBaseline = new Map(bridge.readTimings().map((entry) => [entry.slot, entry]));
+    const page = { ms: pageMs, frames: pageFrames };
+    pageMs = 0;
+    pageFrames = 0;
 
     // Nothing is counted until the renderer is drawing for real, and then
     // only after WARMUP_FRAMES more frames. The baseline above keeps moving,
@@ -196,19 +380,20 @@ export function installStats({ getBridge }) {
     if (!renderReady) return; // still "starting…"
     warmFrame ??= stats.frameCount;
     if (((stats.frameCount - warmFrame) >>> 0) < WARMUP_FRAMES) {
-      show(HEAD_WARMING);
+      placeholder = 'warming up…';
+      render();
       return;
     }
     // No trustworthy window (the first sample, or a jittered or throttled
-    // gap): the baseline has been reset above; keep the last text up.
+    // gap): the baseline has been reset above; keep the last figures up.
     if (!previous || !(now - previous.at >= MIN_WINDOW_MS && now - previous.at < MAX_WINDOW_MS)) {
       return;
     }
+    placeholder = null;
     const seconds = (now - previous.at) / 1000;
 
     const frames = (stats.frameCount - previous.frameCount) >>> 0;
     const steps = (stats.latestStep - previous.latestStep) >>> 0;
-    const smooth = (ema, value) => (ema === null ? value : ema + (value - ema) * EMA_ALPHA);
     fpsEma = smooth(fpsEma, frames / seconds);
     stepsEma = smooth(stepsEma, steps / seconds);
     // Average CPU ms per frame and per step over the window. With no frame
@@ -221,6 +406,7 @@ export function installStats({ getBridge }) {
       const ms = ((stats.stepWorkUs - previous.stepWorkUs) >>> 0) / steps / 1000;
       stepWorkEma = smooth(stepWorkEma, ms);
     }
+    if (page.frames > 0) pageEma = smooth(pageEma, page.ms / page.frames);
     // Average GPU ms per SAMPLED frame: the readback skips frames while one
     // is in flight, so this divides by GPU samples, not by frames.
     const gpuFrames = (stats.gpuFrameCount - previous.gpuFrameCount) >>> 0;
@@ -240,42 +426,40 @@ export function installStats({ getBridge }) {
       missedTotal += missed;
       missedRate = Math.max(missed, 0) / seconds;
     }
-    const displayText = periodMs === null ? 'measuring…' : `${(1000 / periodMs).toFixed(0)} Hz`;
-    const missedText =
-      missedRate === null
-        ? '—'
-        : `${missedRate.toFixed(0)}/s · ${Math.max(missedTotal, 0)} total`;
 
-    let gpuText = '—';
-    if (gpuEma !== null) gpuText = `${gpuEma.toFixed(1)} ms`;
-    else if (gpuEmptyWindows >= 3) gpuText = 'n/a';
-    const cpuText = frameWorkEma === null ? '—' : `${frameWorkEma.toFixed(1)} ms`;
-    // In microseconds: a step of the demo takes about one.
-    const appText = stepWorkEma === null ? '—' : `${(stepWorkEma * 1000).toFixed(1)} µs`;
+    const lateFrames = (stats.appLate - previous.appLate) >>> 0;
+    lateTotal += lateFrames;
+    lateWindows = lateFrames > 0 ? lateWindows + 1 : 0;
+    late = { rate: lateFrames / seconds, bad: lateWindows >= LATE_WINDOWS };
 
-    const headText =
-      HEAD_MAIN +
-      line('display', displayText) +
-      line('render', `${fpsEma.toFixed(0)} fps`) +
-      line('missed', missedText) +
-      line('gpu time', gpuText) +
-      line('cpu time', cpuText) +
-      line('app time', appText) +
-      line('app', `${stepsEma.toFixed(0)} steps/s`);
+    // The breakdowns: each entry's mean over the window. An entry that did
+    // not advance is no longer being measured (its group was collapsed, or
+    // the pass did not run), so it drops out rather than show a stale figure.
+    for (const [slot, entry] of timingBaseline) {
+      const before = previousTimings.get(slot);
+      const count = before ? (entry.count - before.count) >>> 0 : 0;
+      if (count === 0) {
+        timingMeans.delete(slot);
+        continue;
+      }
+      const ms = ((entry.totalNs - before.totalNs) >>> 0) / count / 1e6;
+      const mean = timingMeans.get(slot);
+      timingMeans.set(slot, { kind: entry.kind, name: entry.name, ms: smooth(mean?.ms, ms) });
+    }
 
-    const late = (stats.appLate - previous.appLate) >>> 0;
-    lateTotal += late;
-    lateWindows = late > 0 ? lateWindows + 1 : 0;
-    const lateText = line('app late', `${(late / seconds).toFixed(0)}/s · ${lateTotal} total`);
-
-    show(headText, lateText.trimEnd(), lateWindows >= LATE_WINDOWS);
+    render();
   }
 
+  render();
   setInterval(sample, SAMPLE_INTERVAL_MS);
 
   return {
     markReady() {
       renderReady = true;
+    },
+    pageFrame(ms) {
+      pageMs += ms;
+      pageFrames += 1;
     },
   };
 }

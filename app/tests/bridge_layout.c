@@ -53,6 +53,9 @@ int main(void) {
     OFFSET(bridge_header, ring_offset);
     OFFSET(bridge_header, ring_header_size);
     OFFSET(bridge_header, record_size);
+    OFFSET(bridge_header, timing_offset);
+    OFFSET(bridge_header, timing_capacity);
+    OFFSET(bridge_header, timing_stride);
 
     group("stats");
     OFFSET(bridge_stats, step_work_us);
@@ -62,6 +65,27 @@ int main(void) {
     OFFSET(bridge_stats, gpu_frame_us);
     OFFSET(bridge_stats, gpu_frame_count);
     OFFSET(bridge_stats, app_late);
+    OFFSET(bridge_stats, detail);
+
+    group("timing");
+    OFFSET(bridge_timing, kind);
+    OFFSET(bridge_timing, total_ns);
+    OFFSET(bridge_timing, count);
+    OFFSET(bridge_timing, name);
+    entry("name_size", sizeof(((bridge_timing *)0)->name));
+    entry("app_slots", BRIDGE_TIMING_APP_SLOTS);
+
+    group("timing_kind");
+    entry("app_phase", BRIDGE_TIMING_APP_PHASE);
+    entry("renderer_phase", BRIDGE_TIMING_RENDERER_PHASE);
+    entry("renderer_pass", BRIDGE_TIMING_RENDERER_PASS);
+    entry("gpu_pass", BRIDGE_TIMING_GPU_PASS);
+    entry("renderer_overhead", BRIDGE_TIMING_RENDERER_OVERHEAD);
+
+    group("detail");
+    entry("app", BRIDGE_DETAIL_APP);
+    entry("renderer", BRIDGE_DETAIL_RENDERER);
+    entry("gpu", BRIDGE_DETAIL_GPU);
 
     group("snapshot");
     OFFSET(bridge_snapshot_header, version);
@@ -92,6 +116,7 @@ int main(void) {
     entry("pose", sizeof(bridge_pose));
     entry("ring", sizeof(bridge_ring));
     entry("record", sizeof(bridge_record));
+    entry("timing", sizeof(bridge_timing));
 
     group("ring_index");
     entry("dom_to_app", BRIDGE_RING_DOM_TO_APP);

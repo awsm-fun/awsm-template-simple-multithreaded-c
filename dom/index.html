@@ -19,9 +19,9 @@
     <div id="ui">
       <div class="hud" id="hud" aria-live="off"></div>
 
-      <!-- Top right, opt-in through the Stats button (stats.js). Two parts so
-           that just the app-late line can turn red. -->
-      <div class="stats" id="stats" hidden><span id="stats-head"></span><span id="stats-late"></span></div>
+      <!-- Top right, opt-in through the Stats button. stats.js fills it with
+           one collapsible group per thread. -->
+      <div class="stats" id="stats" hidden></div>
 
       <button class="stats-btn" id="stats-btn" type="button">Stats</button>
       <button class="about-btn" id="about-btn" type="button">About</button>

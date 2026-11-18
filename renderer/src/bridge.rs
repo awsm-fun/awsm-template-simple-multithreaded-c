@@ -17,6 +17,7 @@
 //! Nothing on the per-frame path creates a JS object: every view is built once
 //! in [`Bridge::attach`] and reused.
 
+use std::collections::HashMap;
 use std::mem::offset_of;
 
 use bytemuck::{Pod, Zeroable};
@@ -57,6 +58,9 @@ mod header {
     pub const RING_OFFSET: u32 = 64;
     pub const RING_HEADER_SIZE: u32 = 80;
     pub const RECORD_SIZE: u32 = 84;
+    pub const TIMING_OFFSET: u32 = 88;
+    pub const TIMING_CAPACITY: u32 = 92;
+    pub const TIMING_STRIDE: u32 = 96;
 }
 
 /// Byte offsets in `bridge_stats` of the counters the renderer owns.
@@ -67,6 +71,33 @@ mod stats {
     pub const GPU_FRAME_US: u32 = 16;
     pub const GPU_FRAME_COUNT: u32 = 20;
     pub const APP_LATE: u32 = 24;
+    /// Written by the page: the `detail` bits below.
+    pub const DETAIL: u32 = 28;
+}
+
+/// `BRIDGE_DETAIL_*`: the breakdowns the page's stats panel is showing.
+mod detail {
+    pub const RENDERER: u32 = 0x2;
+    pub const GPU: u32 = 0x4;
+}
+
+/// Byte offsets in `bridge_timing`, the size of its name, and how many
+/// entries at the start of the table belong to the app.
+mod timing {
+    pub const KIND: u32 = 0;
+    pub const TOTAL_NS: u32 = 4;
+    pub const COUNT: u32 = 8;
+    pub const NAME: u32 = 12;
+    pub const NAME_SIZE: u32 = 52;
+    pub const APP_SLOTS: u32 = 8;
+}
+
+/// `BRIDGE_TIMING_*`: what an entry of the timing table measures.
+mod timing_kind {
+    pub const RENDERER_PHASE: u32 = 2;
+    pub const RENDERER_PASS: u32 = 3;
+    pub const GPU_PASS: u32 = 4;
+    pub const RENDERER_OVERHEAD: u32 = 5;
 }
 
 /// Byte offsets in `bridge_snapshot_header`.
@@ -106,6 +137,7 @@ mod size {
     pub const POSE: u32 = 32;
     pub const RING: u32 = 64;
     pub const RECORD: u32 = 64;
+    pub const TIMING: u32 = 64;
 }
 
 /// `BRIDGE_RING_*`: indices into the header's ring offsets.
@@ -310,6 +342,41 @@ pub struct Bridge {
     snapshots: SnapshotRing,
     to_app: Ring,
     from_app: Ring,
+    timings: TimingTable,
+}
+
+/// What the page's stats panel is showing a breakdown of
+/// (`bridge_stats.detail`).
+#[derive(Clone, Copy, Default)]
+pub struct Detail {
+    /// The renderer's frame phases and its CPU time per pass.
+    pub renderer: bool,
+    /// GPU time per pass.
+    pub gpu: bool,
+}
+
+/// What an entry of the timing table measures (`BRIDGE_TIMING_*`).
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TimingKind {
+    RendererPhase = timing_kind::RENDERER_PHASE as isize,
+    RendererPass = timing_kind::RENDERER_PASS as isize,
+    GpuPass = timing_kind::GPU_PASS as isize,
+    /// What timing the passes costs, averaged over every frame: see
+    /// `profile.rs`.
+    RendererOverhead = timing_kind::RENDERER_OVERHEAD as isize,
+}
+
+/// The renderer's part of the timing table: every entry after the app's.
+struct TimingTable {
+    /// Word index of the table's first entry.
+    first_word: u32,
+    /// Words from one entry to the next.
+    stride_words: u32,
+    capacity: u32,
+    /// The next entry not yet given a name.
+    next: u32,
+    /// Which entry each named total lives in.
+    slots: HashMap<(TimingKind, &'static str), u32>,
 }
 
 /// Where the snapshot ring is and how a snapshot is laid out.
@@ -449,6 +516,9 @@ impl Bridge {
         let pose_stride = field(header::POSE_STRIDE);
         let ring_header_size = field(header::RING_HEADER_SIZE);
         let record_size = field(header::RECORD_SIZE);
+        let timing_offset = field(header::TIMING_OFFSET);
+        let timing_capacity = field(header::TIMING_CAPACITY);
+        let timing_stride = field(header::TIMING_STRIDE);
         let inconsistent = || {
             format!(
                 "the bridge block's section table is inconsistent ({total_size} bytes at \
@@ -477,7 +547,14 @@ impl Bridge {
             && ring_header_size >= size::RING
             && ring_header_size.is_multiple_of(4)
             && record_size >= size::RECORD
-            && record_size.is_multiple_of(4);
+            && record_size.is_multiple_of(4)
+            && timing_stride >= size::TIMING
+            && timing_stride.is_multiple_of(4)
+            && timing_capacity >= timing::APP_SLOTS
+            && fits(
+                timing_offset,
+                u64::from(timing_capacity) * u64::from(timing_stride),
+            );
         if !table_ok {
             return Err(inconsistent());
         }
@@ -543,6 +620,13 @@ impl Bridge {
             snapshots,
             to_app,
             from_app,
+            timings: TimingTable {
+                first_word: timing_offset / 4,
+                stride_words: timing_stride / 4,
+                capacity: timing_capacity,
+                next: timing::APP_SLOTS,
+                slots: HashMap::new(),
+            },
         })
     }
 
@@ -792,6 +876,56 @@ impl Bridge {
     pub fn set_gpu_totals(&self, total_us: u32, frames: u32) {
         store(&self.words, self.stats + stats::GPU_FRAME_US / 4, total_us);
         store(&self.words, self.stats + stats::GPU_FRAME_COUNT / 4, frames);
+    }
+
+    /// Which breakdowns the page's stats panel is showing right now.
+    pub fn detail(&self) -> Detail {
+        let bits = load(&self.words, self.stats + stats::DETAIL / 4);
+        Detail {
+            renderer: bits & detail::RENDERER != 0,
+            gpu: bits & detail::GPU != 0,
+        }
+    }
+
+    /// Publishes one named running total in the timing table: `total_ms` of
+    /// time over `count` frames, both since whenever the caller started
+    /// counting. The first call for a name claims an entry for it; once the
+    /// table is full, further names are left out.
+    pub fn publish_timing(
+        &mut self,
+        kind: TimingKind,
+        name: &'static str,
+        total_ms: f64,
+        count: u64,
+    ) {
+        let table = &mut self.timings;
+        let slot = match table.slots.get(&(kind, name)) {
+            Some(slot) => *slot,
+            None if table.next < table.capacity => {
+                let slot = table.next;
+                table.next += 1;
+                table.slots.insert((kind, name), slot);
+                // The name first, the kind last: a page that sees the kind
+                // sees the whole name. Cut to leave a final zero byte.
+                let entry = table.first_word + slot * table.stride_words;
+                let mut bytes = [0u8; timing::NAME_SIZE as usize];
+                let length = name.len().min(bytes.len() - 1);
+                bytes[..length].copy_from_slice(&name.as_bytes()[..length]);
+                for (index, word) in (0u32..).zip(bytes.as_chunks::<4>().0) {
+                    let word = u32::from_le_bytes(*word);
+                    self.words
+                        .set_index(entry + timing::NAME / 4 + index, word as i32);
+                }
+                store(&self.words, entry + timing::KIND / 4, kind as u32);
+                slot
+            }
+            None => return,
+        };
+        let entry = table.first_word + slot * table.stride_words;
+        // Nanoseconds, wrapping like every running total in the block.
+        let total_ns = (total_ms * 1e6) as u64 as u32;
+        store(&self.words, entry + timing::TOTAL_NS / 4, total_ns);
+        store(&self.words, entry + timing::COUNT / 4, count as u32);
     }
 }
 

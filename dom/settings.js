@@ -29,7 +29,8 @@ const STORAGE_PREFIX = 'awsm_simple_mt_c_';
 
 const RES_STORAGE_KEY = `${STORAGE_PREFIX}res_scale`;
 const AA_STORAGE_KEY = `${STORAGE_PREFIX}aa`;
-// Whether the stats panel is open (stats.js).
+// Whether the stats panel is open, and (with `_open_<group>` appended) which
+// of its groups are expanded (stats.js).
 export const STATS_STORAGE_KEY = `${STORAGE_PREFIX}stats`;
 
 // localStorage can be missing or throw (privacy modes, storage disabled). Then
@@ -71,7 +72,13 @@ export function storeBool(key, value) {
 // anything reads a stored setting.
 export function resetSettingsIfAsked() {
   if (!new URLSearchParams(window.location.search).has('reset')) return;
-  for (const key of [RES_STORAGE_KEY, AA_STORAGE_KEY, STATS_STORAGE_KEY]) storageRemove(key);
+  // Everything this page ever stored: the settings, and which parts of the
+  // stats panel were open.
+  let keys = [];
+  try {
+    keys = Object.keys(window.localStorage).filter((key) => key.startsWith(STORAGE_PREFIX));
+  } catch {}
+  for (const key of keys) storageRemove(key);
   loadingLog('?reset — stored settings cleared, booting with defaults');
 }
 

@@ -58,6 +58,8 @@ void app_run(void) {
     for (;;) {
         tick = bridge_wait_frame(bridge, tick);
 
+        // Phase timing only while the stats panel shows the app's breakdown.
+        app.profile = (bridge_detail(bridge) & BRIDGE_DETAIL_APP) != 0;
         double start_ms = emscripten_get_now();
         uint32_t steps = fixed_step_advance(&stepper, &app, bridge_frame_time(bridge));
         if (steps > 0) {

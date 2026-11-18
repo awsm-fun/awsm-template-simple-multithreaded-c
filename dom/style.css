@@ -57,22 +57,63 @@ body {
   position: fixed;
   top: 10px;
   right: 12px;
+  min-width: 330px;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   line-height: 1.55;
   white-space: pre;
-  text-align: left;
   color: #9fb4d8;
   background: rgba(10, 14, 22, 0.55);
   border: 1px solid rgba(127, 209, 255, 0.18);
   border-radius: 8px;
-  padding: 8px 12px;
-  pointer-events: none;
+  padding: 6px 8px;
   backdrop-filter: blur(4px);
 }
 
-/* The app-late line turns red when the app keeps missing frames (see
-   stats.js for exactly when). */
+/* One group per thread: a header that is always there (a button: it toggles
+   the rows under it), with the group's name on the left and its headline
+   number on the right. */
+.stats-group,
+.stats-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.stats-group {
+  width: 100%;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: #cfe0fb;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.stats-group:hover {
+  background: rgba(127, 209, 255, 0.1);
+}
+
+.stats-group:focus-visible {
+  outline: 1px solid #7fd1ff;
+}
+
+/* A group's rows, shown while it is expanded; a nested row breaks down the
+   row above it. */
+.stats-row {
+  padding: 0 4px 0 calc(4px + 2ch);
+}
+
+.stats-row.stats-nested {
+  padding-left: calc(4px + 4ch);
+  color: #7f93b5;
+}
+
+/* The app keeps missing frames (see stats.js for exactly when). */
 .stats .stats-bad {
   color: #ff6a5e;
   font-weight: 700;

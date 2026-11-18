@@ -89,6 +89,11 @@ typedef struct app_state {
     // The ball is against the edge of the ground, so that APP_EVENT_EDGE is
     // sent when it arrives there, not on every step it stays.
     bool at_edge;
+
+    // Time the phases of each step for the page's stats panel. Set by the
+    // run loop while the panel has the app's breakdown open, and only then:
+    // reading the clock a few times per step is not free.
+    bool profile;
 } app_state;
 
 // Sets `app` up to talk through `bridge`, which must outlive it.

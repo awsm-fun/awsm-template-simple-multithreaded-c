@@ -28,9 +28,26 @@ template.
 | R | reload the whole scene |
 
 On screen: a red ball on a 12 × 12 m ground, a HUD (top left), **Stats**
-(bottom left: frame rate, missed frames, GPU, CPU and app time, frames the app
-was late for) and **Settings** (bottom right: render resolution and
+(bottom left) and **Settings** (bottom right: render resolution and
 anti-aliasing).
+
+The Stats panel has one group per thread, so each number sits under the
+thread that spent it, with its unit and what it is per:
+
+| Group | Headline | Expanded |
+| --- | --- | --- |
+| display | refresh rate and frames per second | missed frames |
+| GPU | GPU time per frame | per render pass (on Apple GPUs the passes overlap, so they add up to more than the frame) |
+| renderer (render worker) | the render worker's CPU time per frame | its phases (reading the app's state, transforms, camera, `render()`) and, under `render()`, the CPU time inside each pass and outside all of them |
+| app (C, app worker) | the app's CPU time per fixed step | steps per second, frames the app was late for, and the phases of a step |
+| page (main thread) | the main thread's work per frame | |
+
+A header toggles its group, and the choice is remembered. The breakdowns are
+only measured while their group is open (`profile.rs` in the renderer,
+`app.profile` in the app), so a collapsed panel costs nothing extra. The
+renderer's per-pass CPU timers are expensive in a worker, so they run on one
+frame in sixteen, and what they add to the average frame is listed as
+"timing the passes".
 
 The settings start from sensible defaults (`dom/settings.js`). Resolution is
 native, held to a pixel budget of 2.8 million pixels but never below one
@@ -89,7 +106,7 @@ flowchart LR
         SCENE["ring: scene description"]
         CMDS["ring: BIND, RELOAD_SCENE"]
         EVENTS["ring: app events"]
-        STATS["stats counters"]
+        STATS["stats counters, timing table"]
     end
     DOM --> KEYS --> APP
     REN --> SCENE --> APP
@@ -163,7 +180,8 @@ frame pays for (`app/src/fixed_step.c`, gaps capped at 100 ms), and stamps
 each snapshot with its moment on the frame clock. The renderer draws "previous
 frame time minus one step" between the two snapshots around it, so motion is
 even whether a frame got one step or two. If the app has not published that
-far, the renderer holds the newest snapshot and Stats counts an "app late".
+far, the renderer holds the newest snapshot and Stats counts a late frame
+for the app.
 
 ## Day-to-day work
 

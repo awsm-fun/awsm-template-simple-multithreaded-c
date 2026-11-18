@@ -32,6 +32,9 @@ export const LAYOUT = {
     ring_offset: 64, // [4], indexed by ring_index
     ring_header_size: 80,
     record_size: 84,
+    timing_offset: 88,
+    timing_capacity: 92,
+    timing_stride: 96,
   },
   // bridge_stats
   stats: {
@@ -42,13 +45,27 @@ export const LAYOUT = {
     gpu_frame_us: 16,
     gpu_frame_count: 20,
     app_late: 24,
+    detail: 28, // written by this page: the `detail` bits below
+  },
+  // BRIDGE_DETAIL_*: the breakdowns the stats panel is showing.
+  detail: { APP: 1, RENDERER: 2, GPU: 4 },
+  // bridge_timing: one named running total of the timing table. `name_size`
+  // is the size of its name field.
+  timing: { kind: 0, total_ns: 4, count: 8, name: 12, name_size: 52 },
+  // BRIDGE_TIMING_*: what an entry measures.
+  timing_kind: {
+    APP_PHASE: 1,
+    RENDERER_PHASE: 2,
+    RENDERER_PASS: 3,
+    GPU_PASS: 4,
+    RENDERER_OVERHEAD: 5,
   },
   // bridge_ring
   ring: { head: 0, tail: 4, capacity: 8, dropped: 12 },
   // bridge_record: `payload` is the u[14] / f[14] union.
   record: { type: 0, step: 4, payload: 8 },
   // sizeof(...), in bytes
-  size: { header: 128, stats: 64, ring: 64, record: 64 },
+  size: { header: 128, stats: 64, ring: 64, record: 64, timing: 64 },
   // BRIDGE_RING_*
   ring_index: { DOM_TO_APP: 0, APP_TO_DOM: 3 },
   // Record types (BRIDGE_EV_KEY, BRIDGE_APP_EVENT)
@@ -59,12 +76,15 @@ export const LAYOUT = {
 
 export const KEY = LAYOUT.key;
 export const RECORD = LAYOUT.record_type;
+export const DETAIL = LAYOUT.detail;
+export const TIMING = LAYOUT.timing_kind;
 
 const HEADER = LAYOUT.header;
 const STATS = LAYOUT.stats;
 const RING = LAYOUT.ring;
 const RING_INDEX = LAYOUT.ring_index;
 const FIELD = LAYOUT.record;
+const TIMING_FIELD = LAYOUT.timing;
 const SIZE = LAYOUT.size;
 // 32-bit words in a record's payload (14).
 const PAYLOAD_WORDS = (SIZE.record - FIELD.payload) / 4;
@@ -126,6 +146,10 @@ export class Bridge {
   #ringHeaderSize;
   #recordSize;
   #record;
+  #timings; // the timing table, in bytes
+  #timingCapacity;
+  #timingStride;
+  #timingNames = []; // by entry; a name never changes once its kind is set
 
   // `memory`: the app's SharedArrayBuffer; `ptr`: byte address of the block.
   // Throws with a readable message if the block is not what this page expects.
@@ -174,8 +198,15 @@ export class Bridge {
         inside(ring, this.#ringHeaderSize + capacity * this.#recordSize)
       );
     };
+    this.#timings = ptr + this.#header(HEADER.timing_offset);
+    this.#timingCapacity = this.#header(HEADER.timing_capacity);
+    this.#timingStride = this.#header(HEADER.timing_stride);
     const consistent =
       ptr + totalSize <= memory.byteLength &&
+      this.#timingStride >= SIZE.timing &&
+      this.#timings % 4 === 0 &&
+      this.#timingStride % 4 === 0 &&
+      inside(this.#timings, this.#timingCapacity * this.#timingStride) &&
       this.#header(HEADER.header_size) >= SIZE.header &&
       this.#header(HEADER.stats_size) >= SIZE.stats &&
       this.#ringHeaderSize >= SIZE.ring &&
@@ -266,5 +297,44 @@ export class Bridge {
       appLate: load(s + STATS.app_late),
       latestStep: load(this.#base + HEADER.latest_step),
     };
+  }
+
+  // Tells the app and the renderer which breakdowns the stats panel is
+  // showing (DETAIL bits). They only measure the detail that is asked for.
+  setDetail(bits) {
+    Atomics.store(this.#u32, (this.#stats + STATS.detail) >>> 2, bits >>> 0);
+  }
+
+  // The timing table: every entry in use, as { slot, kind, name, totalNs,
+  // count }. `kind` is a TIMING value; `totalNs` and `count` are running
+  // totals that wrap at 2^32, and the mean per step or frame over a window is
+  // the change in one divided by the change in the other.
+  readTimings() {
+    const entries = [];
+    for (let slot = 0; slot < this.#timingCapacity; slot++) {
+      const entry = this.#timings + slot * this.#timingStride;
+      const kind = Atomics.load(this.#u32, (entry + TIMING_FIELD.kind) >>> 2);
+      if (kind === 0) continue;
+      entries.push({
+        slot,
+        kind,
+        name: (this.#timingNames[slot] ??= this.#timingName(entry)),
+        totalNs: Atomics.load(this.#u32, (entry + TIMING_FIELD.total_ns) >>> 2),
+        count: Atomics.load(this.#u32, (entry + TIMING_FIELD.count) >>> 2),
+      });
+    }
+    return entries;
+  }
+
+  // An entry's name: ASCII bytes up to the first zero. (Read byte by byte: a
+  // TextDecoder does not accept a view of shared memory.)
+  #timingName(entry) {
+    const bytes = new Uint8Array(this.#u32.buffer, entry + TIMING_FIELD.name, TIMING_FIELD.name_size);
+    let name = '';
+    for (const byte of bytes) {
+      if (byte === 0) break;
+      name += String.fromCharCode(byte);
+    }
+    return name;
   }
 }

@@ -24,6 +24,9 @@
 //                    Readers take positions from the table, so capacities can
 //                    change here without rebuilding the renderer.
 //   bridge_stats     counters for the page's stats panel.
+//   timing table     named running totals for that panel's breakdowns (the
+//                    app's step phases, the renderer's frame phases and
+//                    passes), filled in only while the panel asks for them.
 //   snapshot ring    the app's published world state, one snapshot per fixed
 //                    step: a pose (position + rotation) per slot. The newest
 //                    BRIDGE_SNAPSHOT_COUNT steps are kept, and the renderer
@@ -153,8 +156,12 @@ typedef struct bridge_header {
     uint32_t ring_header_size;               //  80  bytes before a ring's first record
     uint32_t record_size;                    //  84  bytes per record
 
-    uint32_t reserved[10]; //  88
-} bridge_header;           // 128
+    uint32_t timing_offset;   //  88  the first bridge_timing
+    uint32_t timing_capacity; //  92  entries in the table
+    uint32_t timing_stride;   //  96  bytes per entry
+
+    uint32_t reserved[7]; // 100
+} bridge_header;          // 128
 
 // ── Stats (counters for the page's stats panel) ────────────────────────────
 //
@@ -173,8 +180,54 @@ typedef struct bridge_stats {
     _Atomic uint32_t gpu_frame_count; // 20  ... this many measured frames
     _Atomic uint32_t app_late;        // 24  frames drawn before the app had caught up
 
-    uint32_t reserved[9]; // 28
+    // Written by the PAGE: which breakdowns its stats panel is showing right
+    // now (BRIDGE_DETAIL_* bits). The app and the renderer only spend time
+    // measuring the detail that is asked for; this is not a running total.
+    _Atomic uint32_t detail; // 28
+
+    uint32_t reserved[8]; // 32
 } bridge_stats;           // 64
+
+// bridge_stats.detail
+enum {
+    BRIDGE_DETAIL_APP = 1u << 0,      // the app's step phases
+    BRIDGE_DETAIL_RENDERER = 1u << 1, // the renderer's frame phases and CPU time per pass
+    BRIDGE_DETAIL_GPU = 1u << 2,      // GPU time per pass
+};
+
+// ── Timing table (breakdowns for the stats panel) ──────────────────────────
+//
+// One named running total per entry. The app owns entries
+// [0, BRIDGE_TIMING_APP_SLOTS), the renderer the rest; each side only writes
+// its own. An owner writes `name` first and `kind` last, so a reader that
+// sees a kind sees the whole name. The page shows the change in `total_ns`
+// divided by the change in `count` between two samples.
+
+#define BRIDGE_TIMING_CAPACITY 64u
+#define BRIDGE_TIMING_APP_SLOTS 8u
+
+// bridge_timing.kind: what the entry measures, which is also where the page
+// shows it.
+enum {
+    BRIDGE_TIMING_UNUSED = 0,
+    BRIDGE_TIMING_APP_PHASE = 1,      // a part of the app's step            (per step)
+    BRIDGE_TIMING_RENDERER_PHASE = 2, // a part of the renderer's frame      (per frame)
+    BRIDGE_TIMING_RENDERER_PASS = 3,  // CPU time inside one render pass     (per frame)
+    BRIDGE_TIMING_GPU_PASS = 4,       // GPU time of one render pass         (per frame)
+    // What timing the passes costs the renderer, averaged over every frame.
+    // The renderer's per-pass timers are far from free, so they run on some
+    // frames only: the PHASE entries come from the frames without them, the
+    // PASS entries from the frames with them (with the timers' own share
+    // taken out), and this is the difference. See renderer/src/profile.rs.
+    BRIDGE_TIMING_RENDERER_OVERHEAD = 5, //                                  (per frame)
+};
+
+typedef struct bridge_timing {
+    _Atomic uint32_t kind;     //  0  BRIDGE_TIMING_*
+    _Atomic uint32_t total_ns; //  4  running total, nanoseconds (wraps)
+    _Atomic uint32_t count;    //  8  steps or frames that total covers (wraps)
+    char name[52];             // 12  ASCII, padded with zero bytes
+} bridge_timing;               // 64
 
 // ── Snapshot ring (app → renderer) ─────────────────────────────────────────
 
@@ -314,6 +367,7 @@ static_assert(sizeof(bridge_pose) == 32, "bridge_pose size");
 static_assert(sizeof(bridge_snapshot_header) == 16, "bridge_snapshot_header size");
 static_assert(sizeof(bridge_ring) == 64, "bridge_ring size");
 static_assert(sizeof(bridge_record) == 64, "bridge_record size");
+static_assert(sizeof(bridge_timing) == 64, "bridge_timing size");
 static_assert((BRIDGE_SNAPSHOT_COUNT & (BRIDGE_SNAPSHOT_COUNT - 1u)) == 0, "power of two");
 static_assert((BRIDGE_RING_CAPACITY & (BRIDGE_RING_CAPACITY - 1u)) == 0, "power of two");
 
@@ -340,6 +394,18 @@ static_assert((BRIDGE_RING_CAPACITY & (BRIDGE_RING_CAPACITY - 1u)) == 0, "power 
 void bridge_destroy(bridge_header *bridge);
 
 bridge_stats *bridge_get_stats(bridge_header *bridge);
+
+// ── Timing table ──
+
+// Which breakdowns the page's stats panel is showing (BRIDGE_DETAIL_* bits).
+uint32_t bridge_detail(bridge_header *bridge);
+
+// Names entry `slot` (below BRIDGE_TIMING_APP_SLOTS) as one of the app's step
+// phases. Call once, before the first bridge_timing_add() for it.
+void bridge_timing_name(bridge_header *bridge, uint32_t slot, const char *name);
+
+// Adds one step's `milliseconds` to entry `slot`.
+void bridge_timing_add(bridge_header *bridge, uint32_t slot, double milliseconds);
 bridge_ring *bridge_get_ring(bridge_header *bridge, int which); // BRIDGE_RING_*
 
 // ── Event rings ──

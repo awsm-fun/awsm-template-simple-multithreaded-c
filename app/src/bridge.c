@@ -46,6 +46,11 @@ static uint32_t fill_layout(bridge_header *h) {
         offset += ring_bytes;
     }
 
+    h->timing_offset = offset;
+    h->timing_capacity = BRIDGE_TIMING_CAPACITY;
+    h->timing_stride = (uint32_t)sizeof(bridge_timing);
+    offset += align_up(h->timing_capacity * h->timing_stride);
+
     h->total_size = offset;
     return offset;
 }
@@ -101,6 +106,37 @@ bridge_stats *bridge_get_stats(bridge_header *bridge) {
 
 bridge_ring *bridge_get_ring(bridge_header *bridge, int which) {
     return at(bridge, bridge->ring_offset[which]);
+}
+
+// ── Timing table ───────────────────────────────────────────────────────────
+
+uint32_t bridge_detail(bridge_header *bridge) {
+    return atomic_load_explicit(&bridge_get_stats(bridge)->detail, memory_order_relaxed);
+}
+
+static bridge_timing *timing_slot(bridge_header *bridge, uint32_t slot) {
+    return at(bridge, bridge->timing_offset + slot * bridge->timing_stride);
+}
+
+void bridge_timing_name(bridge_header *bridge, uint32_t slot, const char *name) {
+    if (slot >= BRIDGE_TIMING_APP_SLOTS) {
+        return;
+    }
+    bridge_timing *timing = timing_slot(bridge, slot);
+    // The block starts zeroed, so a name shorter than the field stays
+    // zero-padded; a longer one is cut (keeping the last byte zero).
+    strncpy(timing->name, name, sizeof timing->name - 1);
+    atomic_store_explicit(&timing->kind, (uint32_t)BRIDGE_TIMING_APP_PHASE, memory_order_release);
+}
+
+void bridge_timing_add(bridge_header *bridge, uint32_t slot, double milliseconds) {
+    if (slot >= BRIDGE_TIMING_APP_SLOTS || !(milliseconds >= 0.0)) {
+        return;
+    }
+    bridge_timing *timing = timing_slot(bridge, slot);
+    atomic_fetch_add_explicit(&timing->total_ns, (uint32_t)(milliseconds * 1e6 + 0.5),
+                              memory_order_relaxed);
+    atomic_fetch_add_explicit(&timing->count, 1u, memory_order_relaxed);
 }
 
 // ── Event rings ────────────────────────────────────────────────────────────

@@ -11,6 +11,7 @@
 
 #include "app.h"
 
+#include <emscripten/emscripten.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -305,20 +306,51 @@ static void publish_snapshot(app_state *app, uint32_t time_us) {
 
 // ── Public API ─────────────────────────────────────────────────────────────
 
+// The step's phases, as the stats panel lists them: their entries in the
+// bridge's timing table.
+enum {
+    PHASE_SCENE,
+    PHASE_INPUT,
+    PHASE_SIMULATE,
+    PHASE_PUBLISH,
+};
+
 void app_init(app_state *app, bridge_header *bridge) {
     *app = (app_state){.bridge = bridge};
+    bridge_timing_name(bridge, PHASE_SCENE, "read scene");
+    bridge_timing_name(bridge, PHASE_INPUT, "read input");
+    bridge_timing_name(bridge, PHASE_SIMULATE, "simulate");
+    bridge_timing_name(bridge, PHASE_PUBLISH, "publish");
+}
+
+// While profiling: charges the time since `since` to `phase` and returns the
+// time now, for the next phase to start from. Otherwise does nothing. (Reading
+// the clock costs a fraction of a microsecond itself, so a phase that shows
+// less than one is mostly that.)
+static double lap(app_state *app, uint32_t phase, double since) {
+    if (!app->profile) {
+        return 0.0;
+    }
+    double now = emscripten_get_now();
+    bridge_timing_add(app->bridge, phase, now - since);
+    return now;
 }
 
 void app_step(app_state *app, float dt, uint32_t time_us) {
     app->step += 1;
+    double t = app->profile ? emscripten_get_now() : 0.0;
 
     read_scene(app);
+    t = lap(app, PHASE_SCENE, t);
     read_input(app);
+    t = lap(app, PHASE_INPUT, t);
     if (app->scene_ready) {
         simulate(app, dt);
     }
+    t = lap(app, PHASE_SIMULATE, t);
     // Published even while there is no scene (with no pose in use): the
     // renderer paces itself by the steps it sees.
     publish_snapshot(app, time_us);
     app->keys_tapped = 0; // a tap counts for one step
+    lap(app, PHASE_PUBLISH, t);
 }

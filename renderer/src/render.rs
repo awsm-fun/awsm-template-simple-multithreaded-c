@@ -34,6 +34,7 @@ use web_sys::{DedicatedWorkerGlobalScope, GpuAdapter, OffscreenCanvas};
 use crate::bridge::{Bridge, Command, Record};
 use crate::camera;
 use crate::page;
+use crate::profile::{Phase, Profile};
 use crate::scene::{self, SceneIndex};
 use crate::slots::Slots;
 
@@ -336,6 +337,8 @@ struct App {
     /// bridge. Timestamp readbacks arrive a few frames late, so the totals are
     /// only written when a new sample has come in.
     gpu_samples_published: Option<u64>,
+    /// The breakdowns the page's stats panel asks for (see [`Profile`]).
+    profile: Profile,
     /// The previous frame's `requestAnimationFrame` timestamp, for the frame
     /// span the page's stats panel turns into missed frames.
     last_frame_ms: Option<f64>,
@@ -411,6 +414,7 @@ impl App {
             outbox: VecDeque::new(),
             frames_drawn: 0,
             gpu_samples_published: None,
+            profile: Profile::default(),
             last_frame_ms: None,
             render_failing: false,
             warned_unknown_record: false,
@@ -428,6 +432,11 @@ impl App {
                 self.attach(request);
             }
         }
+
+        // Phase timing for the stats panel, only while it asks (profile.rs).
+        self.profile
+            .begin_frame(&mut self.renderer, self.bridge.as_ref());
+        let mut lap_ms = work_start;
 
         let mut late = false;
         let mut job = None;
@@ -489,18 +498,28 @@ impl App {
             self.slots.apply(&mut self.renderer, &sample);
         }
 
+        lap_ms = self.profile.lap(Phase::ReadApp, &self.performance, lap_ms);
+
         // Resolve the transforms written above into world matrices and refresh
         // everything derived from them (bounds, culling, lights, shadows).
         // Before the camera, which is read off its node's world matrix.
         self.renderer.update_transforms();
+        lap_ms = self
+            .profile
+            .lap(Phase::UpdateTransforms, &self.performance, lap_ms);
         // The camera is set every frame, even when it has not moved: this is
         // where the renderer picks up the surface's current aspect ratio.
         let (view, params) = camera::view_and_params(&self.renderer, self.scene.camera.as_ref());
-        let drawn = self
+        let camera_set = self
             .renderer
             .set_camera(view, params)
-            .map_err(|err| err.to_string())
-            .and_then(|()| self.renderer.render(None).map_err(|err| err.to_string()));
+            .map_err(|err| err.to_string());
+        lap_ms = self
+            .profile
+            .lap(Phase::SetCamera, &self.performance, lap_ms);
+        let drawn =
+            camera_set.and_then(|()| self.renderer.render(None).map_err(|err| err.to_string()));
+        self.profile.lap(Phase::Render, &self.performance, lap_ms);
         match drawn {
             Ok(()) => {
                 self.render_failing = false;
@@ -520,7 +539,8 @@ impl App {
         // The frame's stats. (The app was already woken at the start of the
         // frame, whether or not the frame could be drawn: a rendering problem
         // should not also freeze the app.)
-        if let Some(bridge) = &self.bridge {
+        if let Some(bridge) = self.bridge.as_mut() {
+            self.profile.end_frame(bridge, frame_ms);
             if let Some(gpu) = awsm_renderer::profiling::gpu_frame_timing() {
                 if self.gpu_samples_published != Some(gpu.count) {
                     self.gpu_samples_published = Some(gpu.count);

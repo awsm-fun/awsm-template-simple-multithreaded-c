@@ -355,6 +355,7 @@ function main() {
   // UI here.
 
   function frame() {
+    const start = performance.now();
     app?.bridge?.drain((record) => {
       if (record.type !== RECORD.APP_EVENT) return; // a record type this page does not know
       const id = record.u(0);
@@ -363,6 +364,8 @@ function main() {
       lastEvent = `${name} at (${at})`;
       renderHud();
     });
+    // For the stats panel: what this thread spends per frame.
+    stats.pageFrame(performance.now() - start);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

@@ -1,6 +1,7 @@
 // Tests for bridge.c: the block layout, the event rings and the snapshot seqlock.
 
 #include <stdint.h>
+#include <string.h>
 
 #include "bridge.h"
 #include "check.h"
@@ -45,7 +46,41 @@ static void test_layout(void) {
         CHECK(atomic_load(&ring->head) == 0);
         CHECK(atomic_load(&ring->tail) == 0);
     }
+    CHECK(b->timing_offset % BRIDGE_ALIGN == 0);
+    CHECK(b->timing_offset >= end);
+    CHECK(b->timing_capacity == BRIDGE_TIMING_CAPACITY);
+    CHECK(b->timing_stride == sizeof(bridge_timing));
+    end = b->timing_offset + b->timing_capacity * b->timing_stride;
     CHECK(end <= b->total_size);
+
+    bridge_destroy(b);
+}
+
+static void test_timing_table(void) {
+    bridge_header *b = bridge_create(60.0f);
+    bridge_timing *table = (bridge_timing *)(void *)((unsigned char *)b + b->timing_offset);
+
+    CHECK(atomic_load(&table[1].kind) == BRIDGE_TIMING_UNUSED);
+    bridge_timing_name(b, 1, "simulate");
+    CHECK(atomic_load(&table[1].kind) == BRIDGE_TIMING_APP_PHASE);
+    CHECK(strcmp(table[1].name, "simulate") == 0);
+
+    // Totals are in nanoseconds; the count is how many steps they cover.
+    bridge_timing_add(b, 1, 0.0015); // 1.5 microseconds
+    bridge_timing_add(b, 1, 0.0005);
+    CHECK(atomic_load(&table[1].total_ns) == 2000u);
+    CHECK(atomic_load(&table[1].count) == 2u);
+
+    // The renderer's entries are not the app's to write.
+    bridge_timing_name(b, BRIDGE_TIMING_APP_SLOTS, "not mine");
+    bridge_timing_add(b, BRIDGE_TIMING_APP_SLOTS, 1.0);
+    CHECK(atomic_load(&table[BRIDGE_TIMING_APP_SLOTS].kind) == BRIDGE_TIMING_UNUSED);
+    CHECK(atomic_load(&table[BRIDGE_TIMING_APP_SLOTS].count) == 0u);
+
+    // The page turns detail on and off through the stats section.
+    CHECK(bridge_detail(b) == 0);
+    atomic_store(&bridge_get_stats(b)->detail, BRIDGE_DETAIL_APP | BRIDGE_DETAIL_GPU);
+    CHECK(bridge_detail(b) == (BRIDGE_DETAIL_APP | BRIDGE_DETAIL_GPU));
 
     bridge_destroy(b);
 }
@@ -199,6 +234,7 @@ int main(void) {
     test_ring_full_drops();
     test_ring_counter_wrap();
     test_snapshot_seqlock();
+    test_timing_table();
     test_frame_tick();
     test_hash();
     return check_report();
