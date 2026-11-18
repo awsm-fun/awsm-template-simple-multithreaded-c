@@ -274,7 +274,7 @@ page stay.
 | `task build` | Release build of everything into a fresh `dist/` (`COI=0` leaves out the header shim) |
 | `task serve` | Release build, then serve it (no watching) |
 | `task test` | Build and run the app tests under node, including the bridge layout check |
-| `task check` | Everything CI runs: clean build and test of both C presets, renderer checks |
+| `task check` | Everything CI runs: clean build and test of both C presets, renderer checks, and a syntax check of the page's JavaScript |
 | `task fmt` / `task clean` | Format the C and Rust sources / delete all build output |
 
 | Part | Tasks (`task --list` has them all) |

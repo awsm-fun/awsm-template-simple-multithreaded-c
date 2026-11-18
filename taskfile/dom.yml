@@ -24,3 +24,14 @@ tasks:
           rm -f dist/coi-serviceworker.js
         fi
       - touch dist/dom.stamp
+
+  check:
+    desc: Syntax-check the page's JavaScript (it has no build step, so nothing else would before a browser does)
+    dir: '{{.ROOT_DIR}}'
+    cmds:
+      # As modules: checked as plain scripts, node gives up at the first
+      # `import` without looking at the rest of the file.
+      - |
+        for file in dom/*.js dom/runtime/*.js; do
+          node --input-type=module --check < "$file" || { echo "dom:check: syntax error in $file"; exit 1; }
+        done
