@@ -10,13 +10,11 @@
 export function modal(overlay, { dismissable = true } = {}) {
   // The page sends keys to the app from a window listener that also stops
   // their default action (no scrolling on Space or the arrows). A key pressed
-  // on a control in here stays with that control instead, so the arrows move
-  // a slider or a select, and Space presses a button. Escape still goes
-  // through, so the overlay closes.
+  // on anything in here stays in here instead, so the arrows move a slider,
+  // a select or a tab, Space presses a button, and both scroll a panel of
+  // text. Escape still goes through, so the overlay closes.
   overlay.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape' && event.target.matches('input, select, button')) {
-      event.stopPropagation();
-    }
+    if (event.key !== 'Escape') event.stopPropagation();
   });
   const open = () => {
     overlay.hidden = false;

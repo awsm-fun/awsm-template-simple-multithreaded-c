@@ -58,8 +58,9 @@ steps below say when.
 | R | reload the whole scene |
 
 On screen: a red ball on a 12 × 12 m ground, a HUD (top left), **Stats**
-(bottom left) and **Settings** (bottom right: render resolution and
-anti-aliasing).
+(bottom left), **About** (bottom centre: what the demo is, with a second tab
+that explains every number in the Stats panel) and **Settings** (bottom
+right: render resolution and anti-aliasing).
 
 The Stats panel opens with the frame budget and then has one group per
 thread, so each number sits under the thread that spent it, with its unit and

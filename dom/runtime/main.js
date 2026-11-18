@@ -269,8 +269,11 @@ function main() {
 
   // ── Panels ──
 
-  const stats = installStats({ getBridge: () => app?.bridge ?? null });
-  installAbout();
+  const about = installAbout();
+  const stats = installStats({
+    getBridge: () => app?.bridge ?? null,
+    onHelp: () => about.open('stats'),
+  });
 
   // ── Settings: canvas size and anti-aliasing ──
 

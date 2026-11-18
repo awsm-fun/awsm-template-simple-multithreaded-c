@@ -222,12 +222,19 @@ function buildGroups(panel) {
 }
 
 // `getBridge()` returns the current app's Bridge (or null while there is
-// none). Returns { markReady(), pageFrame(ms) }: call the first when the
-// renderer reports `ready`, the second once per animation frame with the time
-// this thread spent on it.
-export function installStats({ getBridge }) {
+// none); `onHelp()` opens the explanation of the panel (About's Stats tab).
+// Returns { markReady(), pageFrame(ms) }: call the first when the renderer
+// reports `ready`, the second once per animation frame with the time this
+// thread spent on it.
+export function installStats({ getBridge, onHelp }) {
   const panel = document.getElementById('stats');
   const button = document.getElementById('stats-btn');
+  const help = document.createElement('button');
+  help.type = 'button';
+  help.className = 'stats-help';
+  help.textContent = 'what do these mean?';
+  help.addEventListener('click', onHelp);
+  panel.append(help);
   const view = buildGroups(panel);
 
   const refresh = measureRefresh();
