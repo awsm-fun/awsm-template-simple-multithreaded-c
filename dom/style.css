@@ -400,7 +400,7 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #loading,
+  #loading.done,
   #loading .orb {
     transition: none;
     animation: none;
