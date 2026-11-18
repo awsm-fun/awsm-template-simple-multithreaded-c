@@ -22,9 +22,9 @@ crate-type = ["cdylib"]
 #   awsm-renderer-scene        the `Scene` type and the `scene.toml` parser
 #   awsm-renderer-scene-loader `load_scene_for_player`; `http` adds the
 #                              ready-made asset source that fetches bundle files
-awsm-renderer = "0.42.0"
-awsm-renderer-scene = "0.42.0"
-awsm-renderer-scene-loader = { version = "0.42.0", features = ["http"] }
+awsm-renderer = "0.43.0"
+awsm-renderer-scene = "0.43.0"
+awsm-renderer-scene-loader = { version = "0.43.0", features = ["http"] }
 
 # glam types cross the renderer's API, so this must be the renderer's version.
 glam = "0.32"

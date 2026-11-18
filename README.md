@@ -61,23 +61,27 @@ On screen: a red ball on a 12 × 12 m ground, a HUD (top left), **Stats**
 (bottom left) and **Settings** (bottom right: render resolution and
 anti-aliasing).
 
-The Stats panel has one group per thread, so each number sits under the
-thread that spent it, with its unit and what it is per:
+The Stats panel opens with the frame budget and then has one group per
+thread, so each number sits under the thread that spent it, with its unit and
+what it is per:
 
 | Group | Headline | Expanded |
 | --- | --- | --- |
+| frame budget | the time one display refresh allows (16.7 ms at 60 Hz) and the headroom left by whichever of the GPU and the threads uses most of it | the GPU and each thread: time per frame, out of the budget; and, for reference, the latency of a frame (renderer + GPU) |
 | display | refresh rate and frames per second | missed frames |
 | GPU | GPU time per frame | per render pass (on Apple GPUs the passes overlap, so they add up to more than the frame) |
-| renderer (render worker) | the render worker's CPU time per frame | its phases (reading the app's state, transforms, camera, `render()`) and, under `render()`, the CPU time inside each pass and outside all of them |
+| renderer (render worker) | the render worker's CPU time per frame | its phases (reading the app's state, transforms, camera, `render()`) and, under `render()`, what awsm-renderer spends preparing the frame (uploads, bind groups, …), encoding each pass and submitting, with what is left over |
 | app (C, app worker) | the app's CPU time per fixed step | steps per second, frames the app was late for, and the phases of a step |
 | page (main thread) | the main thread's work per frame | |
 
 A header toggles its group, and the choice is remembered. The breakdowns are
 only measured while their group is open (`profile.rs` in the renderer,
 `runtime_state.profile` in the app), so a collapsed panel costs nothing
-extra. The renderer's per-pass CPU timers are expensive in a worker, so they
-run on one frame in sixteen, and what they add to the average frame is listed
-as "timing the passes".
+extra.
+
+CPU and GPU work run in parallel, so each must fit the frame budget on its
+own; they do not add up, except when the CPU waits on the GPU, which shows as
+missed frames.
 
 The settings start from sensible defaults (`dom/runtime/settings.js`).
 Resolution is native, held to a pixel budget of 2.8 million pixels but never

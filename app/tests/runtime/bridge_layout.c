@@ -83,7 +83,9 @@ int main(void) {
     entry("renderer_phase", BRIDGE_TIMING_RENDERER_PHASE);
     entry("renderer_pass", BRIDGE_TIMING_RENDERER_PASS);
     entry("gpu_pass", BRIDGE_TIMING_GPU_PASS);
-    entry("renderer_overhead", BRIDGE_TIMING_RENDERER_OVERHEAD);
+    entry("renderer_prep", BRIDGE_TIMING_RENDERER_PREP);
+    entry("renderer_submit", BRIDGE_TIMING_RENDERER_SUBMIT);
+    entry("renderer_hook", BRIDGE_TIMING_RENDERER_HOOK);
 
     group("detail");
     entry("app", BRIDGE_DETAIL_APP);

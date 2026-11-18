@@ -115,6 +115,11 @@ body {
   color: #7f93b5;
 }
 
+/* A breakdown of a breakdown. */
+.stats-row.stats-nested-2 {
+  padding-left: calc(4px + 6ch);
+}
+
 /* The app keeps missing frames (see stats.js for exactly when). */
 .stats .stats-bad {
   color: #ff6a5e;

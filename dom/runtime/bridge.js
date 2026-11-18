@@ -61,7 +61,9 @@ export const LAYOUT = {
     RENDERER_PHASE: 2,
     RENDERER_PASS: 3,
     GPU_PASS: 4,
-    RENDERER_OVERHEAD: 5,
+    RENDERER_PREP: 8,
+    RENDERER_SUBMIT: 9,
+    RENDERER_HOOK: 10,
   },
   // bridge_ring
   ring: { head: 0, tail: 4, capacity: 8, dropped: 12 },

@@ -97,7 +97,9 @@ mod timing_kind {
     pub const RENDERER_PHASE: u32 = 2;
     pub const RENDERER_PASS: u32 = 3;
     pub const GPU_PASS: u32 = 4;
-    pub const RENDERER_OVERHEAD: u32 = 5;
+    pub const RENDERER_PREP: u32 = 8;
+    pub const RENDERER_SUBMIT: u32 = 9;
+    pub const RENDERER_HOOK: u32 = 10;
 }
 
 /// Byte offsets in `bridge_snapshot_header`.
@@ -361,9 +363,10 @@ pub enum TimingKind {
     RendererPhase = timing_kind::RENDERER_PHASE as isize,
     RendererPass = timing_kind::RENDERER_PASS as isize,
     GpuPass = timing_kind::GPU_PASS as isize,
-    /// What timing the passes costs, averaged over every frame: see
-    /// `profile.rs`.
-    RendererOverhead = timing_kind::RENDERER_OVERHEAD as isize,
+    /// The rest of `render()`, by awsm-renderer's own kinds of scope.
+    RendererPrep = timing_kind::RENDERER_PREP as isize,
+    RendererSubmit = timing_kind::RENDERER_SUBMIT as isize,
+    RendererHook = timing_kind::RENDERER_HOOK as isize,
 }
 
 /// The renderer's part of the timing table: every entry after the app's.
