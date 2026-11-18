@@ -1,3 +1,5 @@
+// RUNTIME: shared by every game; your game goes in app/src/game/ and dom/game.js
+//
 // stats.js — the stats panel (top right) and the Stats button (bottom left)
 // that shows and hides it.
 //
@@ -27,7 +29,7 @@
 //
 // Once a second the panel samples the running totals the app and the renderer
 // keep in the bridge block (bridge_stats and the timing table in
-// app/src/bridge.h): no messages. Every figure is the change in a total
+// app/src/runtime/bridge.h): no messages. Every figure is the change in a total
 // divided by the change in what it is per (frames, steps, or REAL seconds:
 // a one-second timer is not exactly a second apart, and is throttled in a
 // background tab), then smoothed.
@@ -48,7 +50,7 @@ const MAX_WINDOW_MS = 3000;
 // windows in a row: a steady condition, not a one-off such as a tab switch.
 const LATE_WINDOWS = 3;
 // Frames presented after the renderer reports `ready` before anything is
-// counted: start-up (cold caches, the wasm engine still optimizing) reads
+// counted: start-up (cold caches, the browser still optimizing the wasm) reads
 // several times the settled cost. Counted in frames, not time, so a stalled
 // renderer keeps waiting instead of "warming up" through the stall.
 const WARMUP_FRAMES = 60;

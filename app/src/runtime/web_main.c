@@ -1,3 +1,5 @@
+// RUNTIME: shared by every game; your game goes in app/src/game/ and dom/game.js
+//
 // web_main.c — the browser entry point.
 //
 // app/web/worker.js loads this module in a dedicated worker and calls:
@@ -14,11 +16,16 @@
 // into a console.log() call, which appears in the browser console prefixed
 // with [app]. Output is line-buffered, so end messages with '\n'.
 
+#include <emscripten/em_macros.h>
 #include <emscripten/emscripten.h>
+#include <stdatomic.h>
+#include <stdint.h>
 #include <stdio.h>
 
-#include "app.h"
-#include "fixed_step.h"
+#include "game/game.h"
+#include "runtime/bridge.h"
+#include "runtime/fixed_step.h"
+#include "runtime/runtime.h"
 
 // EMSCRIPTEN_KEEPALIVE exports a function to JavaScript as `module._name`.
 // (The prototypes keep -Wmissing-prototypes quiet; JS is the only caller.)
@@ -26,7 +33,7 @@ EMSCRIPTEN_KEEPALIVE uintptr_t app_start(void);
 EMSCRIPTEN_KEEPALIVE void app_run(void);
 
 static bridge_header *bridge;
-static app_state app;
+static runtime_state runtime;
 static fixed_step stepper;
 
 uintptr_t app_start(void) {
@@ -36,7 +43,7 @@ uintptr_t app_start(void) {
             fprintf(stderr, "app: could not allocate the bridge block\n");
             return 0;
         }
-        app_init(&app, bridge);
+        runtime_init(&runtime, bridge);
         printf("app: bridge block ready (%u bytes), stepping at %d Hz\n", bridge->total_size,
                APP_STEP_HZ);
     }
@@ -59,9 +66,9 @@ void app_run(void) {
         tick = bridge_wait_frame(bridge, tick);
 
         // Phase timing only while the stats panel shows the app's breakdown.
-        app.profile = (bridge_detail(bridge) & BRIDGE_DETAIL_APP) != 0;
+        runtime.profile = (bridge_detail(bridge) & BRIDGE_DETAIL_APP) != 0;
         double start_ms = emscripten_get_now();
-        uint32_t steps = fixed_step_advance(&stepper, &app, bridge_frame_time(bridge));
+        uint32_t steps = fixed_step_advance(&stepper, &runtime, bridge_frame_time(bridge));
         if (steps > 0) {
             // For the stats panel: the app's CPU time, as a running total.
             double work_us = (emscripten_get_now() - start_ms) * 1000.0;

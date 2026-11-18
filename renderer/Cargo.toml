@@ -1,5 +1,5 @@
 # The render worker: awsm-renderer on an OffscreenCanvas, driven by the bridge
-# block that lives in the app's memory (see ../app/src/bridge.h).
+# block that lives in the app's memory (see ../app/src/runtime/bridge.h).
 #
 # This is a standalone crate, not a workspace member: it is built with plain
 # `cargo build` on stable Rust, then post-processed by the wasm-bindgen CLI

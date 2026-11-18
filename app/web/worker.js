@@ -1,8 +1,8 @@
 // app/worker.js — hosts the C app (app.js + app.wasm) in a module worker.
 //
-// Started by dom/main.js. It loads the Emscripten module, asks the C side to
-// create the bridge block, sends the page the shared memory and the block's
-// address, and then hands this thread over to the C run loop for good.
+// Started by dom/runtime/main.js. It loads the Emscripten module, asks the C
+// side to create the bridge block, sends the page the shared memory and the
+// block's address, and then hands this thread over to the C run loop for good.
 //
 // Messages to the page:
 //   {type: 'ready', memory: SharedArrayBuffer, bridgePtr: number}

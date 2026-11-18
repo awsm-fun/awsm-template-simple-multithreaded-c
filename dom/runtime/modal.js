@@ -1,3 +1,5 @@
+// RUNTIME: shared by every game; your game goes in app/src/game/ and dom/game.js
+//
 // modal.js — the behaviour every overlay on the page shares.
 
 // Wires up the overlay element `overlay` (one of the `…-overlay` elements in

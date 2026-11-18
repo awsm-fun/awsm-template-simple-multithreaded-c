@@ -6,11 +6,11 @@
 # export (its scene.toml plus its assets/ folder).
 #
 # What the rest of the project relies on:
-#   * NAMES. The app finds nodes by name (the table at the top of
-#     app/src/app.c): "Ball" is the node it moves, "Ground" is what it keeps
-#     the ball on. Rename one here and the app says so in the console.
+#   * NAMES. The game finds nodes by name (GAME_OBJECTS at the top of
+#     app/src/game/game.c): "Ball" is the node it moves, "Ground" is what it
+#     keeps the ball on. Rename one here and the app says so in the console.
 #   * UNIT-SIZED MESHES. The sphere has diameter 1 and the plane is 1 × 1, so
-#     each node's `scale` is its size in metres. The app reads sizes that way.
+#     each node's `scale` is its size in metres. The game reads sizes that way.
 #   * `active_camera` picks the camera node the renderer draws through.
 #
 # Every id is a UUID. They only have to be unique; these are easy to read.

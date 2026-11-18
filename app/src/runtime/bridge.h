@@ -1,3 +1,5 @@
+// RUNTIME: shared by every game; your game goes in app/src/game/ and dom/game.js
+//
 // bridge.h — THE contract between the three threads. Start reading here.
 //
 //   dom/       main thread, plain JS     reads + writes through typed-array views
@@ -12,8 +14,8 @@
 // views.
 //
 // This header is the single source of truth for the layout. It has two
-// hand-written mirrors, `renderer/src/bridge.rs` and `dom/bridge.js`, and
-// nothing else in the project knows an offset. `task test` compares both
+// hand-written mirrors, `renderer/src/bridge.rs` and `dom/runtime/bridge.js`,
+// and nothing else in the project knows an offset. `task test` compares both
 // mirrors against this header (tools/check-bridge.mjs), so they cannot drift
 // without a test failing.
 //
@@ -88,7 +90,8 @@
 #ifndef BRIDGE_H
 #define BRIDGE_H
 
-#include <stdatomic.h>
+// `_Atomic` is a keyword, so this header needs no <stdatomic.h>; the files
+// that call atomic_load() and friends on these fields include it themselves.
 #include <stddef.h>
 #include <stdint.h>
 
@@ -322,13 +325,13 @@ enum {
 
     // ── app → dom ──────────────────────────────────────────────────────────
     // Something happened in the app that the page may want to show.
-    //   u[0]       event id, defined by the app (APP_EVENT_* in app.h)
+    //   u[0]       event id, defined by the game (GAME_EVENT_* in game.h)
     //   f[1..3]    a world position, if the event has one
     BRIDGE_APP_EVENT = 48,
 };
 
-// Keys the page reports (dom/main.js maps `KeyboardEvent.code` to these).
-// What a key DOES is decided in the app.
+// Keys the page reports (KEY_CODES in dom/game.js maps `KeyboardEvent.code`
+// to these). What a key DOES is decided in the game.
 enum {
     BRIDGE_KEY_NONE = 0,
     BRIDGE_KEY_W = 1,
@@ -357,8 +360,8 @@ static inline uint32_t bridge_hash(const char *name) {
 
 // ── Layout guards ──────────────────────────────────────────────────────────
 // Sizes only: the per-field offsets are checked against the two mirrors by
-// `task test` (app/tests/bridge_layout.c prints them, tools/check-bridge.mjs
-// compares).
+// `task test` (app/tests/runtime/bridge_layout.c prints them,
+// tools/check-bridge.mjs compares).
 
 static_assert(sizeof(_Atomic uint32_t) == 4, "atomics must be plain 32-bit words");
 static_assert(sizeof(bridge_header) == 128, "bridge_header size");
@@ -411,7 +414,7 @@ bridge_ring *bridge_get_ring(bridge_header *bridge, int which); // BRIDGE_RING_*
 // ── Event rings ──
 //
 //   bridge_record rec = {.type = BRIDGE_APP_EVENT, .step = step};
-//   rec.u[0] = APP_EVENT_RESET;
+//   rec.u[0] = GAME_EVENT_RESET;
 //   bridge_ring_push(bridge_get_ring(bridge, BRIDGE_RING_APP_TO_DOM), &rec);
 //
 //   while (bridge_ring_pop(bridge_get_ring(bridge, BRIDGE_RING_DOM_TO_APP), &rec)) {

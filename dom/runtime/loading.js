@@ -1,3 +1,5 @@
+// RUNTIME: shared by every game; your game goes in app/src/game/ and dom/game.js
+//
 // loading.js — the loading screen and the "cannot start" screen.
 //
 // The loading screen is in the static HTML, so it shows the moment the page
@@ -6,8 +8,7 @@
 // once the first frames are on screen. It comes back whenever the renderer
 // loads the scene again (the app asked for a reload).
 
-// The name the HUD and the "cannot start" screen go by.
-export const APP_NAME = 'simple-multithreaded-c';
+import { GAME_NAME } from '../game.js';
 
 // The newest loading lines kept on screen (older ones fade out at the top).
 const MAX_LOADING_LINES = 14;
@@ -51,6 +52,6 @@ export function fatal(message) {
   screen.className = 'hud fatal';
   const detail = document.createElement('span');
   detail.textContent = message;
-  screen.append(`${APP_NAME} — cannot start\n\n`, detail);
+  screen.append(`${GAME_NAME} — cannot start\n\n`, detail);
   document.body.append(screen);
 }

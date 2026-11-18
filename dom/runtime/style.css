@@ -1,3 +1,5 @@
+/* RUNTIME: shared by every game; your game goes in app/src/game/ and dom/game.js */
+
 html,
 body {
   margin: 0;

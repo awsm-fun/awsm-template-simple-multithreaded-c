@@ -1,4 +1,4 @@
-//! The renderer's view of the bridge block: the mirror of `app/src/bridge.h`.
+//! The renderer's view of the bridge block: the mirror of `app/src/runtime/bridge.h`.
 //!
 //! The block is a region of the APP module's linear memory. This module is a
 //! different wasm instance with its own memory, so it cannot dereference a

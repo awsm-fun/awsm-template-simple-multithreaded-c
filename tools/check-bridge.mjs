@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 // check-bridge.mjs — makes sure the two hand-written mirrors of
-// app/src/bridge.h still agree with it.
+// app/src/runtime/bridge.h still agree with it.
 //
 //   node tools/check-bridge.mjs app/build/wasm-dev/bridge_layout.js
 //
 // (`task test` runs it for you, as the ctest test `bridge_mirrors`.)
 //
-// The argument is the compiled app/tests/bridge_layout.c, which prints every
-// offset, size and constant of the bridge block as the C compiler sees them.
-// That is the truth. Each mirror is then read and every number it states is
-// looked up there:
+// The argument is the compiled app/tests/runtime/bridge_layout.c, which prints
+// every offset, size and constant of the bridge block as the C compiler sees
+// them. That is the truth. Each mirror is then read and every number it states
+// is looked up there:
 //
-//   dom/bridge.js           imported here; its exported LAYOUT object, and
+//   dom/runtime/bridge.js   imported here; its exported LAYOUT object, and
 //                           bridgeHash()
 //   renderer/src/bridge.rs  parsed: the `mod x { pub const Y: u32 = n; }`
 //                           items between the two "bridge.h mirror" markers
@@ -27,7 +27,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const JS_MIRROR = path.join(repo, 'dom', 'bridge.js');
+const JS_MIRROR = path.join(repo, 'dom', 'runtime', 'bridge.js');
 const RUST_MIRROR = path.join(repo, 'renderer', 'src', 'bridge.rs');
 const RUST_BEGIN = 'bridge.h mirror: begin';
 const RUST_END = 'bridge.h mirror: end';
@@ -67,18 +67,18 @@ function compare(mirrorName, groups) {
   return compared;
 }
 
-// ── dom/bridge.js ───────────────────────────────────────────────────────────
+// ── dom/runtime/bridge.js ───────────────────────────────────────────────────
 
 // Imported from its text rather than by path: without a package.json saying
 // "type": "module", older Node versions would load a .js file as CommonJS.
 const jsSource = fs.readFileSync(JS_MIRROR, 'utf8');
 const js = await import(`data:text/javascript;base64,${Buffer.from(jsSource).toString('base64')}`);
 if (typeof js.LAYOUT !== 'object' || js.LAYOUT === null) {
-  problems.push('dom/bridge.js: no exported LAYOUT object');
+  problems.push('dom/runtime/bridge.js: no exported LAYOUT object');
 }
-const jsCompared = compare('dom/bridge.js', js.LAYOUT ?? {});
+const jsCompared = compare('dom/runtime/bridge.js', js.LAYOUT ?? {});
 if (js.bridgeHash?.('foobar') !== truth.hash.foobar) {
-  problems.push('dom/bridge.js: bridgeHash() disagrees with bridge_hash() in bridge.h');
+  problems.push('dom/runtime/bridge.js: bridgeHash() disagrees with bridge_hash() in bridge.h');
 }
 
 // ── renderer/src/bridge.rs ──────────────────────────────────────────────────
@@ -119,16 +119,16 @@ const rustCompared = compare(
 
 // A mirror that states nothing would pass every comparison; that is a broken
 // check, not a matching layout.
-if (jsCompared === 0) problems.push('dom/bridge.js: LAYOUT is empty');
+if (jsCompared === 0) problems.push('dom/runtime/bridge.js: LAYOUT is empty');
 if (rustCompared === 0) problems.push('renderer/src/bridge.rs: no constants found in the mirror');
 
 if (problems.length > 0) {
-  console.error('The bridge mirrors do not match app/src/bridge.h:\n');
+  console.error('The bridge mirrors do not match app/src/runtime/bridge.h:\n');
   for (const problem of problems) console.error(`  ${problem}`);
-  console.error('\nFix the mirror (or add the new name to app/tests/bridge_layout.c).');
+  console.error('\nFix the mirror (or add the new name to app/tests/runtime/bridge_layout.c).');
   process.exit(1);
 }
 console.log(
-  `bridge mirrors match bridge.h (dom/bridge.js: ${jsCompared} values, ` +
+  `bridge mirrors match bridge.h (dom/runtime/bridge.js: ${jsCompared} values, ` +
     `renderer/src/bridge.rs: ${rustCompared} values)`,
 );

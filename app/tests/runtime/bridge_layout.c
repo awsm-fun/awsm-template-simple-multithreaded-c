@@ -1,14 +1,17 @@
+// RUNTIME: shared by every game; your game goes in app/src/game/ and dom/game.js
+//
 // Prints the bridge block's layout, as this compiler sees it, as JSON.
 //
 // tools/check-bridge.mjs compares it with the two hand-written mirrors
-// (renderer/src/bridge.rs and dom/bridge.js), so a field that moves here
-// without its mirrors being updated fails `task test` instead of drawing
-// garbage. When you add a field or a constant that a mirror uses, add it
-// here too: a mirror may only name things this file prints.
+// (renderer/src/bridge.rs and dom/runtime/bridge.js), so a field that moves
+// here without its mirrors being updated fails `task test` instead of drawing
+// garbage. When you add a field or a constant that a mirror uses, add it here
+// too: a mirror may only name things this file prints.
 
+#include <stddef.h>
 #include <stdio.h>
 
-#include "bridge.h"
+#include "runtime/bridge.h"
 
 static bool first_group = true;
 static bool first_entry = true;

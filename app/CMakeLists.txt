@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.26)
 project(awsm_app LANGUAGES C)
 
-# The app thread: all application logic, in C23, compiled to WebAssembly with
-# Emscripten. There is no native build: the tests are wasm too, and run under
+# The app thread: your game (src/game/) and the runtime that runs it
+# (src/runtime/), in C23, compiled to WebAssembly with Emscripten. There is no native build: the tests are wasm too, and run under
 # node. See CMakePresets.json for the two configurations (`wasm`, `wasm-dev`).
 if(NOT EMSCRIPTEN)
     message(FATAL_ERROR
@@ -101,16 +101,23 @@ add_compile_options(-pthread -matomics -mbulk-memory)
 add_link_options(-pthread)
 
 # --- Library: the app itself, shared by the browser entry point and the tests -----
+# Your game is every .c file in src/game/, picked up on the next build (no
+# edit here when you add one). The runtime's files are listed. One library,
+# because the two call each other (the runtime calls the game's hooks, the
+# game calls runtime_*). Headers are included by their path under src/:
+# "game/game.h", "runtime/runtime.h".
+file(GLOB GAME_SOURCES CONFIGURE_DEPENDS src/game/*.c)
 add_library(core
-    src/app.c
-    src/bridge.c
-    src/fixed_step.c
+    ${GAME_SOURCES}
+    src/runtime/bridge.c
+    src/runtime/fixed_step.c
+    src/runtime/runtime.c
 )
 target_include_directories(core PUBLIC src)
 target_link_libraries(core PRIVATE project_options)
 
 # --- The browser module: app.js + app.wasm ----------------------------------------
-add_executable(app src/web_main.c)
+add_executable(app src/runtime/web_main.c)
 target_link_libraries(app PRIVATE core project_options)
 target_link_options(app PRIVATE
     # app.js is an ES module whose default export instantiates the wasm:
@@ -139,17 +146,24 @@ target_link_options(app PRIVATE
 
 # --- Tests --------------------------------------------------------------------------
 # Ordinary C programs with a main(), compiled to wasm like everything else.
-# Emscripten's toolchain tells ctest to run them with node.
+# Emscripten's toolchain tells ctest to run them with node. Every
+# tests/runtime/test_<name>.c and tests/game/test_<name>.c is a test called
+# <name> (so a new test_*.c in tests/game/ needs no edit here). They include
+# "runtime/check.h" from tests/.
 enable_testing()
-foreach(_name IN ITEMS bridge app)
-    add_executable(test_${_name} tests/test_${_name}.c)
-    target_link_libraries(test_${_name} PRIVATE core project_options)
-    add_test(NAME ${_name} COMMAND test_${_name})
+file(GLOB TEST_SOURCES CONFIGURE_DEPENDS tests/runtime/test_*.c tests/game/test_*.c)
+foreach(_source IN LISTS TEST_SOURCES)
+    get_filename_component(_target "${_source}" NAME_WE)
+    string(REGEX REPLACE "^test_" "" _name "${_target}")
+    add_executable(${_target} "${_source}")
+    target_include_directories(${_target} PRIVATE tests)
+    target_link_libraries(${_target} PRIVATE core project_options)
+    add_test(NAME ${_name} COMMAND ${_target})
 endforeach()
 
 # The cross-language layout check: bridge_layout prints what THIS compiler
 # makes of bridge.h, and the script compares the Rust and JS mirrors with it.
-add_executable(bridge_layout tests/bridge_layout.c)
+add_executable(bridge_layout tests/runtime/bridge_layout.c)
 target_link_libraries(bridge_layout PRIVATE core project_options)
 find_program(NODE_EXECUTABLE node REQUIRED)
 add_test(NAME bridge_mirrors

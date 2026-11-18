@@ -1,4 +1,5 @@
-# The C app (app/). Thin wrappers: all build configuration lives in
+# The C app (app/): your game (app/src/game/) and the runtime that runs it
+# (app/src/runtime/). Thin wrappers: all build configuration lives in
 # app/CMakeLists.txt and app/CMakePresets.json, so `cmake --preset ...` in
 # app/ does exactly what these do. Everything is WebAssembly, built with
 # Emscripten; there are two presets, each with its own tree app/build/<preset>:
@@ -87,7 +88,7 @@ tasks:
       - sh: command -v clang-format
         msg: 'clang-format not found. Install it with: brew install clang-format'
     cmds:
-      - clang-format -i src/*.c src/*.h tests/*.c tests/*.h
+      - clang-format -i src/*/*.c src/*/*.h tests/*/*.c tests/*/*.h
 
   clean:
     desc: Delete the C build trees (app/build/)

@@ -1,5 +1,8 @@
-// bridge.js — the page's view of the bridge block. Mirrors app/src/bridge.h,
-// which is the authoritative description of the layout; read that first.
+// RUNTIME: shared by every game; your game goes in app/src/game/ and dom/game.js
+//
+// bridge.js — the page's view of the bridge block. Mirrors
+// app/src/runtime/bridge.h, which is the authoritative description of the
+// layout; read that first.
 //
 // This is the only file in dom/ that knows byte offsets, and every one of them
 // is in LAYOUT below. `task test` (tools/check-bridge.mjs) imports this module
@@ -70,7 +73,7 @@ export const LAYOUT = {
   ring_index: { DOM_TO_APP: 0, APP_TO_DOM: 3 },
   // Record types (BRIDGE_EV_KEY, BRIDGE_APP_EVENT)
   record_type: { EV_KEY: 1, APP_EVENT: 48 },
-  // BRIDGE_KEY_*: what the page reports. What a key does is up to the app.
+  // BRIDGE_KEY_*: what the page reports. What a key does is up to the game.
   key: { W: 1, A: 2, S: 3, D: 4, UP: 5, DOWN: 6, LEFT: 7, RIGHT: 8, R: 9, SPACE: 10 },
 };
 

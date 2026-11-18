@@ -1,10 +1,14 @@
+// RUNTIME: shared by every game; your game goes in app/src/game/ and dom/game.js
+//
 // bridge.c — the app's side of the bridge block (see bridge.h for the layout).
 //
-// The only C file that computes an offset. Game code uses the functions
-// declared at the bottom of bridge.h.
+// The only C file that computes an offset. The rest of the runtime uses the
+// functions declared at the bottom of bridge.h; your game never needs them.
 
-#include "bridge.h"
+#include "runtime/bridge.h"
 
+#include <stdatomic.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 

@@ -22,8 +22,17 @@ CompileFlags:
   Add: [-xc-header]
 
 ---
-# The tests include the app's headers as "app.h", "bridge.h".
+# Every header is included by its path under src/ ("game/game.h",
+# "runtime/runtime.h"), and the tests include "runtime/check.h" from tests/.
+# CMake passes these directories itself; this is the same fallback, relative
+# to the file's own directory (src/<dir>/ or tests/<dir>/).
+If:
+  PathMatch: src/.*
+CompileFlags:
+  Add: [-I..]
+
+---
 If:
   PathMatch: tests/.*
 CompileFlags:
-  Add: [-I../src]
+  Add: [-I../../src, -I..]

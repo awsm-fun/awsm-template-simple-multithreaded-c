@@ -6,16 +6,19 @@
     <title>Simple multithreaded template · C app · Rust renderer · JS page</title>
     <link rel="icon" href="data:," />
     <!-- coi-serviceworker (`task build` replaces this line with the shim's script tag) -->
-    <link rel="stylesheet" href="style.css" />
-    <script type="module" src="main.js"></script>
+    <link rel="stylesheet" href="runtime/style.css" />
+    <script type="module" src="runtime/main.js"></script>
   </head>
   <body>
-    <!-- tabindex: focusable, so pressing it takes the keyboard (see main.js). -->
+    <!-- The page shell, shared by your game and the runtime. Yours to retitle:
+         the <title>, the About text and the loading screen's title below. -->
+    <!-- tabindex: focusable, so pressing it takes the keyboard (see runtime/main.js). -->
     <canvas id="view" tabindex="-1"></canvas>
 
-    <!-- Everything drawn over the canvas. main.js fills in the text; the
-         behaviour lives in stats.js, about.js and settings.js. Hidden as a
-         whole when the page cannot start (loading.js, fatal()). -->
+    <!-- Everything drawn over the canvas. runtime/main.js fills in the HUD
+         (with your game's words from game.js); the behaviour lives in
+         runtime/stats.js, about.js and settings.js. Hidden as a whole when
+         the page cannot start (runtime/loading.js, fatal()). -->
     <div id="ui">
       <div class="hud" id="hud" aria-live="off"></div>
 

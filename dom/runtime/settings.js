@@ -1,3 +1,5 @@
+// RUNTIME: shared by every game; your game goes in app/src/game/ and dom/game.js
+//
 // settings.js — the graphics settings and how the canvas is sized.
 //
 // Two levers, both the user's to set in the Settings modal (bottom right),
@@ -16,17 +18,13 @@
 // The page only picks the DEFAULTS, from the device class (touch screen,
 // software GPU) and the window size, and never over a choice the user made.
 
+import { STORAGE_PREFIX } from '../game.js';
 import { loadingLog } from './loading.js';
 import { modal } from './modal.js';
 
 // ── Stored settings ────────────────────────────────────────────────────────
 
-// Every key starts with this prefix. localStorage is shared by everything on
-// the same origin (every project under one domain, every app you run on
-// localhost:8000), so CHANGE IT when you start your own project from this
-// template, or two projects will overwrite each other's settings.
-const STORAGE_PREFIX = 'awsm_simple_mt_c_';
-
+// Every key starts with your game's STORAGE_PREFIX (dom/game.js).
 const RES_STORAGE_KEY = `${STORAGE_PREFIX}res_scale`;
 const AA_STORAGE_KEY = `${STORAGE_PREFIX}aa`;
 // Whether the stats panel is open, and (with `_open_<group>` appended) which

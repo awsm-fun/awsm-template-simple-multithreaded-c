@@ -21,6 +21,36 @@ For Box3D physics and audio on the same architecture, see the sibling
 [physics-multithreaded-c](https://github.com/awsm-fun/awsm-template-physics-multithreaded-c)
 template.
 
+## Where your game goes
+
+Every file is either **yours**, the part that changes when you make a new
+game from this template, or **the runtime**, which is the same for every game
+and runs yours. The C and JS files under `game/` and `runtime/` say which on
+their first line (`YOUR GAME: start here` or `RUNTIME: …`).
+
+```
+app/src/game/        YOURS    game.h, game.c: your game, in C. Start here.
+app/tests/game/      YOURS    test_game.c: tests for your game
+dom/game.js          YOURS    page side: name, storage prefix, keys, HUD, events
+dom/index.html       YOURS    page shell: title and About text
+media/bundle/        YOURS    the scene: scene.toml (+ assets/)
+
+app/src/runtime/     RUNTIME  step loop, bridge block, browser entry point
+app/tests/runtime/   RUNTIME  bridge, layout and fixed-step tests, check.h
+app/web/             RUNTIME  the app worker's script
+dom/runtime/         RUNTIME  boot, workers, keyboard, HUD, panels, bridge view
+renderer/            RUNTIME  the Rust WebGPU renderer
+tools/, taskfile/    RUNTIME  dev server, checks, every workflow
+```
+
+The runtime calls your game through a few hooks in `game.c`, and your game
+acts only through `runtime_*` calls; it never touches the bridge block itself
+(see [Your game](#your-game)). A new `.c` file in `app/src/game/` or
+`test_*.c` in `app/tests/game/` is picked up by the build with no other edit.
+The only reason to open a runtime file is something the runtime does not have
+yet, such as a new key or a new kind of message between the threads; the
+steps below say when.
+
 | Input | Effect |
 | --- | --- |
 | W A S D or the arrow keys | roll the ball (it stops at the edges of the ground) |
@@ -44,19 +74,19 @@ thread that spent it, with its unit and what it is per:
 
 A header toggles its group, and the choice is remembered. The breakdowns are
 only measured while their group is open (`profile.rs` in the renderer,
-`app.profile` in the app), so a collapsed panel costs nothing extra. The
-renderer's per-pass CPU timers are expensive in a worker, so they run on one
-frame in sixteen, and what they add to the average frame is listed as
-"timing the passes".
+`runtime_state.profile` in the app), so a collapsed panel costs nothing
+extra. The renderer's per-pass CPU timers are expensive in a worker, so they
+run on one frame in sixteen, and what they add to the average frame is listed
+as "timing the passes".
 
-The settings start from sensible defaults (`dom/settings.js`). Resolution is
-native, held to a pixel budget of 2.8 million pixels but never below one
-device pixel per CSS pixel, so a big high-DPI window starts below 100% and a
-small one at 100%; touch devices and software GPUs start lower still, and
-with anti-aliasing off. A choice you make is remembered in `localStorage` and
-always wins; `?reset` in the URL forgets it. The storage keys share one
-prefix (`STORAGE_PREFIX`): change it for your own project, since everything
-on the same origin shares `localStorage`.
+The settings start from sensible defaults (`dom/runtime/settings.js`).
+Resolution is native, held to a pixel budget of 2.8 million pixels but never
+below one device pixel per CSS pixel, so a big high-DPI window starts below
+100% and a small one at 100%; touch devices and software GPUs start lower
+still, and with anti-aliasing off. A choice you make is remembered in
+`localStorage` and always wins; `?reset` in the URL forgets it. The storage
+keys share one prefix (`STORAGE_PREFIX` in `dom/game.js`): change it for your
+own project, since everything on the same origin shares `localStorage`.
 
 ## Quick start
 
@@ -119,8 +149,9 @@ flowchart LR
     STATS --> DOM
 ```
 
-The layout is defined once, in `app/src/bridge.h`. `postMessage` is only used
-at start-up and for rare events such as a Settings change, never per frame.
+The layout is defined once, in `app/src/runtime/bridge.h`. `postMessage` is
+only used at start-up and for rare events such as a Settings change, never
+per frame.
 
 * **The block lives in the C module's memory** because a wasm module can only
   address its own memory. The app is where you iterate, so it gets plain
@@ -129,28 +160,36 @@ at start-up and for rare events such as a Settings change, never per frame.
   renderer keeps running (the hot swap), and the renderer stays a
   single-threaded module on stable Rust. The C side uses `-pthread` only to
   get shared memory and atomics.
-* **The app never receives messages.** `app_run()` in `app/src/web_main.c`
-  never returns: it sleeps until a frame starts, runs that frame's steps, and
-  sleeps again. Everything reaches it through the block.
+* **The app never receives messages.** `app_run()` in
+  `app/src/runtime/web_main.c` never returns: it sleeps until a frame starts,
+  runs that frame's steps, and sleeps again. Everything reaches it through
+  the block.
 
 ```
-app/                       the C app: a CMake project, Emscripten only
-  src/bridge.h, bridge.c   the contract between the three threads (start here)
-  src/app.h, app.c         all state and logic (your code goes here)
-  src/fixed_step.c         turns frame times into whole 120 Hz steps
-  src/web_main.c           browser entry point (app_start, app_run)
-  tests/                   test_app.c, test_bridge.c, bridge_layout.c
-renderer/                  the Rust crate: cargo + wasm-bindgen (+ wasm-opt)
-  src/bridge.rs            the renderer's mirror of bridge.h
-  src/render.rs            start-up, the frame loop, attach / detach
-  src/scene.rs             loads scene.toml, indexes its named nodes
-  src/slots.rs             which scene node each pose slot drives
-dom/                       the page: index.html, main.js, style.css
-  bridge.js                the page's mirror of bridge.h
-  loading.js, stats.js, …  the panels (also settings.js, about.js, modal.js)
-media/bundle/scene.toml    the scene: a sun, the ground, a ball and a camera
-tools/                     dev-server.mjs, check-bridge.mjs, coi-serviceworker.js
-Taskfile.yml, taskfile/    every workflow
+app/                          the C app: a CMake project, Emscripten only
+  src/game/game.h, game.c     YOURS: your game's objects, state and logic
+  src/runtime/runtime.h, .c   the step loop around your game, and its API
+  src/runtime/bridge.h, .c    the contract between the three threads
+  src/runtime/fixed_step.c    turns frame times into whole 120 Hz steps
+  src/runtime/web_main.c      browser entry point (app_start, app_run)
+  src/runtime/math3d.h        vectors and quaternions
+  tests/game/                 YOURS: test_game.c
+  tests/runtime/              test_bridge.c, test_fixed_step.c, bridge_layout.c
+  web/worker.js               the app worker's script
+renderer/                     the Rust crate: cargo + wasm-bindgen (+ wasm-opt)
+  src/bridge.rs               the renderer's mirror of bridge.h
+  src/render.rs               start-up, the frame loop, attach / detach
+  src/scene.rs                loads scene.toml, indexes its named nodes
+  src/slots.rs                which scene node each pose slot drives
+dom/                          the page
+  index.html                  YOURS: the page shell
+  game.js                     YOURS: your game's side of the page
+  runtime/main.js, style.css  boot, the workers, the keyboard, the HUD
+  runtime/bridge.js           the page's mirror of bridge.h
+  runtime/stats.js, …         the panels (also loading, settings, about…)
+media/bundle/scene.toml       YOURS: a sun, the ground, a ball and a camera
+tools/                        dev-server, check-bridge, coi-serviceworker
+Taskfile.yml, taskfile/       every workflow
 ```
 
 ## One frame, start to finish
@@ -175,8 +214,9 @@ sequenceDiagram
 
 This is Glenn Fiedler's ["Fix Your Timestep"](https://gafferongames.com/post/fix_your_timestep/)
 split across two threads. The app always steps 1/120 s at a time
-(`APP_STEP_HZ` in `app/src/app.h`), as many steps as the time since the last
-frame pays for (`app/src/fixed_step.c`, gaps capped at 100 ms), and stamps
+(`APP_STEP_HZ` in `app/src/game/game.h`), as many steps as the time since
+the last frame pays for (`app/src/runtime/fixed_step.c`, gaps capped at
+100 ms), and stamps
 each snapshot with its moment on the frame clock. The renderer draws "previous
 frame time minus one step" between the two snapshots around it, so motion is
 even whether a frame got one step or two. If the app has not published that
@@ -204,9 +244,9 @@ flowchart LR
 
 | You edit | What happens |
 | --- | --- |
-| `app/` | `task app:dev` (`wasm-dev` preset); only the app worker is swapped, 1 to 1.5 s after the save |
+| `app/` (your `app/src/game/` included) | `task app:dev` (`wasm-dev` preset); only the app worker is swapped, 1 to 1.5 s after the save |
 | `renderer/` | `task renderer:dev` (crate unoptimized, dependencies optimized, no wasm-opt); reload, 3 to 4 s after the save |
-| `dom/`, `media/` | `task dom:build` / `task media:build` (copies); reload |
+| `dom/` (your `dom/game.js` included), `media/` | `task dom:build` / `task media:build` (copies); reload |
 
 (Times are from an M1 Max MacBook.) A failed build leaves the page on the
 last good build, with the error in the terminal, and the other watchers keep
@@ -214,8 +254,9 @@ going. `printf` from C shows in the browser console as `[app] …`.
 Variables: `RELOAD=page` (reload instead of swap), `OPEN=` (no browser),
 `PORT=9000`.
 
-A hot-swapped app starts from scratch. With `APP_RELOAD_SCENE_ON_HOT_SWAP` at
-`1` (the default, in `app/src/app.h`) it also asks the renderer to load the
+A hot-swapped app starts from scratch. With `GAME_RELOAD_SCENE_ON_HOT_SWAP`
+at `1` (the default, in `app/src/game/game.h`) it also asks the renderer to
+load the
 scene again, so every save starts from `scene.toml` whatever the previous
 build did to the world; the loading screen shows for the second that takes.
 At `0` it takes over the renderer's current world: instant, and bound nodes
@@ -238,25 +279,46 @@ page stay.
 | renderer | `renderer:dev`, `renderer:release` (LTO, wasm-opt), `renderer:check` (check, clippy, fmt), `renderer:fmt`, `renderer:clean` |
 | other | `dom:build`, `media:build`, `dev:server` (serve `dist/` without building) |
 
-## Where to start editing
+## Your game
 
-Everything happens in `app/src/app.c`. Each step reads the scene description
-and the keys, calls `simulate()`, and publishes a snapshot.
+Your C is `app/src/game/`: `game.h` holds what the runtime needs to know at
+compile time (object ids `GAME_OBJ_*`, event ids `GAME_EVENT_*`, your
+`game_state`, tuning, `APP_STEP_HZ`, `GAME_RELOAD_SCENE_ON_HOT_SWAP`), and
+`game.c` the logic. Each fixed step the runtime reads the scene description
+and the keys, calls your hooks, and publishes a snapshot.
 
-* **`simulate(app, dt)`** is your game loop, run every step once the scene is
-  ready. Set `position` and `rotation` on `app->objects[...]` (see
-  `move_ball()`); driven objects are published for you. Set
-  `teleported = true` when an object jumps, so the renderer does not glide
-  between the two places.
-* **Input.** Poll held keys with `app_key_held(app, BRIDGE_KEY_W)`; one-off
-  actions go in `key_event()`, next to Space and R.
-* **Talking to the page.** `send_event(app, APP_EVENT_EDGE, where)`, with ids
-  from `APP_EVENT_*` in `app.h`. In `dom/main.js`, `APP_EVENT_NAMES` names
-  them and the `drain` callback in `frame()` handles them.
-* **Starting over.** `app_reload_scene(app)` makes the renderer destroy
-  everything and load `scene.toml` again, keeping the GPU device and the page
-  (R in the demo). The app then gets the scene described afresh, exactly as
-  after the first load; reset your own state in `scene_begin()`.
+The contract is declared in `app/src/runtime/runtime.h`. `game.c` provides:
+
+| Hook | Called |
+| --- | --- |
+| `GAME_OBJECTS[]` | a table, not a call: the scene node name of each `GAME_OBJ_*` id, and whether the game moves it (`driven`) |
+| `game_init(runtime, game)` | once, when the app starts (after every hot swap too) |
+| `game_scene_begin(runtime, game)` | a scene description begins (first load, every reload, a hot swap): reset your state |
+| `game_scene_ready(runtime, game)` | the scene is described; found objects are at their authored pose and driven ones are bound |
+| `game_key(runtime, game, key, down)` | a key went down or up, while the scene is ready: one-off actions |
+| `game_update(runtime, game, dt)` | every fixed step while the scene is ready: your game loop |
+
+and calls back only these:
+
+| Call | Does |
+| --- | --- |
+| `runtime_get_object(runtime, GAME_OBJ_BALL)` | an object's pose: read `found`, `start_position`, `scale`; set `position`, `rotation`, and `teleported = true` when it jumps rather than moves |
+| `runtime_key_held(runtime, BRIDGE_KEY_W)` | whether a key counts as held this step (a tap shorter than a step counts once) |
+| `runtime_send_event(runtime, GAME_EVENT_EDGE, where)` | tells the page something happened |
+| `runtime_reload_scene(runtime)` | the renderer destroys everything and loads `scene.toml` again, keeping the GPU device and the page (R in the demo); the game restarts from `game_scene_begin` |
+| `runtime_current_step(runtime)` | the step being run, counting from 1 |
+
+**Poses.** The runtime keeps one pose per `GAME_OBJ_*` id, filled in from the
+scene by name. Your game moves an object by setting its `position` and
+`rotation`; after `game_update` returns, the runtime writes every driven
+object the scene has into the snapshot. The game never sees a ring or a
+snapshot, and the runtime never needs to know what an object is.
+
+**The page side** is `dom/game.js`: `GAME_NAME`, `STORAGE_PREFIX`,
+`KEY_CODES` (which keys reach the game), `HUD_CONTROLS`, and
+`onGameEvent(record, hud)`, called for every `runtime_send_event` with the id
+in `record.u(0)` and the position in `record.f(1..3)`. `GAME_EVENT_NAMES`
+there must match `GAME_EVENT_*` in `game.h`.
 
 ## Add a new object
 
@@ -293,47 +355,64 @@ vertex_colors_enabled = false
 shading = "pbr"
 ```
 
-**2. An id and a name.** In `app/src/app.h`, add `APP_OBJ_BUDDY,` to
-`app_object_id` just before `APP_OBJ_COUNT` (the id is also its pose slot).
-In `OBJECTS[]` at the top of `app/src/app.c`, add:
+**2. An id and a name.** In `app/src/game/game.h`, add `GAME_OBJ_BUDDY,` to
+`game_object_id` just before `GAME_OBJ_COUNT` (the id is also its pose slot).
+In `GAME_OBJECTS[]` at the top of `app/src/game/game.c`, add:
 
 ```c
-    [APP_OBJ_BUDDY] = {.name = "Buddy", .driven = true},
+    [GAME_OBJ_BUDDY] = {.name = "Buddy", .driven = true},
 ```
 
-**3. Move it** in `simulate()`, next to `move_ball(app, dt);`:
+**3. Move it** in `game_update()` in `game.c`, after
+`move_ball(runtime, game, dt);`:
 
 ```c
-    app_object *buddy = &app->objects[APP_OBJ_BUDDY];
+    runtime_object *buddy = runtime_get_object(runtime, GAME_OBJ_BUDDY);
     if (buddy->found) {
-        float angle = (float)app->step * dt * 1.5f; // radians
+        float angle = (float)runtime_current_step(runtime) * dt * 1.5f; // radians
         vec3 offset = {2.0f * cosf(angle), 0.0f, 2.0f * sinf(angle)};
         buddy->position = vec3_add(buddy->start_position, offset);
     }
 ```
 
-The media watcher reloads the page and the app watcher hot-swaps the app. No
-Rust is rebuilt: the renderer reports every named node and binds what the app
-asks for. (The tests describe the scene by hand in `send_scene()` in
-`app/tests/test_app.c`. If you add Buddy there, `test_scene_binds_the_ball`
-will see a second BIND.)
+and, for `cosf` and `sinf`, `#include <math.h>` next to `<stdint.h>` at the
+top of `game.c`.
 
-**Add a key.** Add `BRIDGE_KEY_F = 11` to `app/src/bridge.h` (room up to
-`BRIDGE_KEY_COUNT`, 32), `F: 11` to `LAYOUT.key` in `dom/bridge.js`,
-`KeyF: KEY.F` to `KEY_CODES` in `dom/main.js`, and `entry("f", BRIDGE_KEY_F);`
-to `app/tests/bridge_layout.c` (mirrors may only name what it prints). Then
-use it in `key_event()` or with `app_key_held()`.
+Only your files changed. The media watcher reloads the page and the app
+watcher hot-swaps the app. No Rust is rebuilt: the renderer reports every
+named node and binds what the game asks for. (The tests describe the scene by
+hand in `send_scene()` in `app/tests/game/test_game.c`. If you add Buddy
+there, `test_scene_binds_the_ball` will see a second BIND.)
 
-**Add a record type.** Add it to the record enum in `bridge.h` with its
-payload documented, to the `record_type` group in `bridge_layout.c`, and to
-the mirror that uses it (`LAYOUT.record_type` in `dom/bridge.js`, or
-`renderer/src/bridge.rs`). Push it with `bridge_ring_push()` and handle it
-where that ring is read. Consumers skip types they do not know, so the
-renderer only needs rebuilding if it must understand the record.
+**Add a key.** The runtime knows a fixed set of keys, so a new one touches
+the bridge (runtime files) as well as your game:
+
+* runtime: `BRIDGE_KEY_F = 11` in `app/src/runtime/bridge.h` (room up to
+  `BRIDGE_KEY_COUNT`, 32), `F: 11` in `LAYOUT.key` in
+  `dom/runtime/bridge.js`, and `entry("f", BRIDGE_KEY_F);` in
+  `app/tests/runtime/bridge_layout.c` (mirrors may only name what it prints);
+* yours: `KeyF: KEY.F` in `KEY_CODES` in `dom/game.js`, then use it in
+  `game_key()` or with `runtime_key_held()` in `game.c`.
+
+The renderer does not read keys, so nothing in Rust changes.
+
+**Add a record type.** This changes how the threads talk, so it is runtime
+work, not game work: add it to the record enum in
+`app/src/runtime/bridge.h` with its payload documented, to the `record_type`
+group in `app/tests/runtime/bridge_layout.c`, and to the mirror that uses it
+(`LAYOUT.record_type` in `dom/runtime/bridge.js`, or
+`renderer/src/bridge.rs`). Push it with `bridge_ring_push()` in
+`app/src/runtime/runtime.c` and handle it where that ring is read (for
+example `frame()` in `dom/runtime/main.js`), then give your game a
+`runtime_*` call or a hook for it in `runtime.h`. Consumers skip types they
+do not know, so the renderer only needs rebuilding if it must understand the
+record. To send the page something new without any of this, use a new
+`GAME_EVENT_*` id instead: that stays in `game.h`, `game.c` and
+`dom/game.js`.
 
 ## The bridge in a little more depth
 
-`app/src/bridge.h` documents every field and payload; in short:
+`app/src/runtime/bridge.h` documents every field and payload; in short:
 
 * **No locks.** `_Atomic` fields are accessed atomically on all three sides
   (`Atomics.*` in JS). The only blocking wait is the app on `frame_tick`.
@@ -345,9 +424,10 @@ renderer only needs rebuilding if it must understand the record.
   `type`, the app `step`, 14 payload words as `u[i]` or `f[i]`). A full ring
   drops the record and counts it in `dropped`.
 * **Names are FNV-1a hashes** (`bridge_hash()`, the same in all three).
-* **The mirrors cannot drift.** `app/tests/bridge_layout.c` prints the layout
-  as the C compiler sees it and `tools/check-bridge.mjs` compares
-  `renderer/src/bridge.rs` and `dom/bridge.js` with it (ctest `bridge_mirrors`).
+* **The mirrors cannot drift.** `app/tests/runtime/bridge_layout.c` prints the
+  layout as the C compiler sees it and `tools/check-bridge.mjs` compares
+  `renderer/src/bridge.rs` and `dom/runtime/bridge.js` with it (ctest
+  `bridge_mirrors`).
 * **Capacities are free to change** without a renderer rebuild: readers find
   everything through the header's section table.
 * **Bump `BRIDGE_VERSION`** (and both mirrors) when an existing field moves or
@@ -357,8 +437,10 @@ renderer only needs rebuilding if it must understand the record.
 ## Tests
 
 The tests in `app/tests/` are ordinary C programs, compiled to wasm and run
-under node by ctest: `task test`. `test_app.c` plays the page and the renderer
-with no browser, a worked example for your own. CI runs `task check`.
+under node by ctest: `task test`. Yours are in `app/tests/game/`:
+`test_game.c` plays the page and the renderer with no browser, a worked
+example for your own (any `test_*.c` there becomes a test). The runtime's own
+are in `app/tests/runtime/`. CI runs `task check`.
 
 ## Deploying
 
@@ -379,15 +461,16 @@ site works from a subpath.
 
 Replace `media/bundle/` with an export from the
 [awsm scene editor](https://scene.awsm.fun) (its `scene.toml` and `assets/`).
-The app expects, by name (`OBJECTS[]` in `app/src/app.c`):
+The demo game expects, by name (`GAME_OBJECTS[]` in `app/src/game/game.c`):
 
 * **"Ball"**, the node it moves, and **"Ground"**, an axis-aligned rectangle
   around that node that the ball stays on. A missing name is logged.
 * **A camera**: the node `active_camera` names. To move it, bind it like any
   other object.
 * **Unit-sized meshes**: a sphere of diameter 1 and a 1 × 1 plane, so `scale`
-  is size in metres (`UNIT_SPHERE_RADIUS`, `UNIT_PLANE_HALF`, used by
-  `simulate()` and `keep_on_ground()`). See the header comment of `scene.toml`.
+  is size in metres (`UNIT_SPHERE_RADIUS`, `UNIT_PLANE_HALF` in
+  `app/src/game/game.h`, used by `move_ball()` and `keep_on_ground()`). See
+  the header comment of `scene.toml`.
 
 ## Limitations
 

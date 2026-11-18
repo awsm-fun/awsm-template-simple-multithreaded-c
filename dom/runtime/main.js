@@ -1,15 +1,21 @@
+// RUNTIME: shared by every game; your game goes in app/src/game/ and dom/game.js
+//
 // main.js — the main thread. Owns the page: the canvas, the keyboard, the HUD,
-// and the two workers. No framework, no build step.
+// and the two workers. No framework, no build step. Everything about your
+// game (its name, keys, HUD words, what its events do) comes from
+// dom/game.js.
 //
 //   renderer/worker.js  draws into the canvas (transferred to it as an
 //                       OffscreenCanvas) from the snapshots the app publishes
-//   app/worker.js       runs the C app; all logic and state live there
+//   app/worker.js       runs the C app (your game and its runtime); all logic
+//                       and state live there
 //
-// The app's memory holds the shared "bridge block" (see app/src/bridge.h).
-// When the app worker reports `ready`, this thread forwards its memory to the
-// renderer (`attach`) and keeps its own view (bridge.js) to send keys and read
-// app events and stats. After that, nothing per-frame goes through
-// postMessage; the only messages are rare ones, such as a Settings change.
+// The app's memory holds the shared "bridge block" (see
+// app/src/runtime/bridge.h). When the app worker reports `ready`, this thread
+// forwards its memory to the renderer (`attach`) and keeps its own view
+// (bridge.js) to send keys and read game events and stats. After that,
+// nothing per-frame goes through postMessage; the only messages are rare
+// ones, such as a Settings change.
 //
 // The panels over the canvas each have a module of their own:
 //
@@ -21,49 +27,25 @@
 //
 // This file wires them to the workers, and owns the keyboard and the HUD.
 
-import { Bridge, KEY, RECORD } from './bridge.js';
+import { GAME_NAME, HUD_CONTROLS, KEY_CODES, onGameEvent } from '../game.js';
+import { Bridge, RECORD } from './bridge.js';
 import { installAbout } from './about.js';
-import { APP_NAME, fatal, loadingDone, loadingLog, loadingStart } from './loading.js';
+import { fatal, loadingDone, loadingLog, loadingStart } from './loading.js';
 import { Settings, resetSettingsIfAsked } from './settings.js';
 import { installStats } from './stats.js';
 
-// KeyboardEvent.code → bridge key. Codes name physical keys, so W/A/S/D sit in
-// the same place on every keyboard layout.
-const KEY_CODES = {
-  KeyW: KEY.W,
-  KeyA: KEY.A,
-  KeyS: KEY.S,
-  KeyD: KEY.D,
-  ArrowUp: KEY.UP,
-  ArrowDown: KEY.DOWN,
-  ArrowLeft: KEY.LEFT,
-  ArrowRight: KEY.RIGHT,
-  KeyR: KEY.R,
-  Space: KEY.SPACE,
-};
-
-// What the HUD calls each app event. The ids are defined by the app
-// (APP_EVENT_* in app/src/app.h); this page only gives them words. Nothing
-// checks these numbers against app.h: change them together.
-const APP_EVENT_NAMES = {
-  1: 'ball put back', // APP_EVENT_RESET
-  2: 'ball reached the edge', // APP_EVENT_EDGE
-};
-
 const canvas = document.getElementById('view');
-const hud = document.getElementById('hud');
+const hudPanel = document.getElementById('hud');
 const errorPanel = document.getElementById('error');
 const errorText = document.getElementById('error-text');
 
 // ── HUD ───────────────────────────────────────────────────────────────────
 //
-// Top left: the controls, one status line and the latest app event. The
-// status line goes booting… → loading scene… → running, and shows the latest
-// error while there is one.
+// Top left: the game's name and controls (game.js), one status line and the
+// latest game event. The status line goes booting… → loading scene… →
+// running, and shows the latest error while there is one.
 
-const HUD_TEXT =
-  `${APP_NAME}\n` +
-  'W/A/S/D or arrows: move the ball · Space: put it back · R: reload the scene\n';
+const HUD_TEXT = `${GAME_NAME}\n${HUD_CONTROLS}\n`;
 
 // What the status line calls each source of errors.
 const ERROR_NAMES = { page: 'page', renderer: 'render', app: 'app' };
@@ -76,6 +58,14 @@ function setStatus(text) {
   renderHud();
 }
 
+// What game.js gets to change on the HUD.
+const hud = {
+  setEvent(text) {
+    lastEvent = text;
+    renderHud();
+  },
+};
+
 function renderHud() {
   let line = status;
   const latest = [...errors].at(-1);
@@ -83,7 +73,7 @@ function renderHud() {
     const [source, messages] = latest;
     line = `${ERROR_NAMES[source] ?? source} error: ${messages.at(-1).split('\n')[0]}`;
   }
-  hud.textContent = `${HUD_TEXT}${line}\nlast event: ${lastEvent}`;
+  hudPanel.textContent = `${HUD_TEXT}${line}\nlast event: ${lastEvent}`;
 }
 
 // ── Errors ────────────────────────────────────────────────────────────────
@@ -300,8 +290,8 @@ function main() {
 
   // ── Keyboard ──
   //
-  // The page only reports which keys go down and up (records on the dom → app
-  // ring); what they do is decided in the app.
+  // The page only reports which of game.js's KEY_CODES go down and up
+  // (records on the dom → app ring); what they do is decided in the game.
 
   // The keys the current app has been told are down.
   const heldKeys = new Set();
@@ -353,21 +343,16 @@ function main() {
     if (document.hidden) releaseAllKeys();
   });
 
-  // ── Per frame: app events (the app → dom ring) ──
+  // ── Per frame: game events (the app → dom ring) ──
   //
-  // This is how the app tells the page something happened. Here the page
-  // just names the event on the HUD; a real game would update its score or
-  // UI here.
+  // This is how the game tells the page something happened; game.js's
+  // onGameEvent decides what the page does about it.
 
   function frame() {
     const start = performance.now();
     app?.bridge?.drain((record) => {
       if (record.type !== RECORD.APP_EVENT) return; // a record type this page does not know
-      const id = record.u(0);
-      const name = APP_EVENT_NAMES[id] ?? `event ${id}`;
-      const at = [record.f(1), record.f(2), record.f(3)].map((v) => v.toFixed(1)).join(', ');
-      lastEvent = `${name} at (${at})`;
-      renderHud();
+      onGameEvent(record, hud);
     });
     // For the stats panel: what this thread spends per frame.
     stats.pageFrame(performance.now() - start);

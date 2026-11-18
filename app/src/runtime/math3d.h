@@ -1,8 +1,10 @@
-// math3d.h — just enough vector and quaternion maths for the demo.
+// RUNTIME: shared by every game; your game goes in app/src/game/ and dom/game.js
+//
+// math3d.h — just enough vector and quaternion maths for the demo game.
 //
 // Conventions (the same as the renderer's): right-handed, +Y up; quaternions
 // are (x, y, z, w). Everything is `static inline`, so there is no .c file.
-// Grow it as your app needs, or swap in a maths library you like.
+// Grow it as your game needs, or swap in a maths library you like.
 
 #ifndef MATH3D_H
 #define MATH3D_H

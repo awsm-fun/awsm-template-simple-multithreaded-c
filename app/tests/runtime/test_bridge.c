@@ -1,10 +1,14 @@
+// RUNTIME: shared by every game; your game goes in app/src/game/ and dom/game.js
+//
 // Tests for bridge.c: the block layout, the event rings and the snapshot seqlock.
 
+#include <stdatomic.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include "bridge.h"
-#include "check.h"
+#include "runtime/bridge.h"
+#include "runtime/check.h"
 
 static void test_layout(void) {
     bridge_header *b = bridge_create(120.0f);

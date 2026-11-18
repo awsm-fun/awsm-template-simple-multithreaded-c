@@ -1,3 +1,5 @@
+// RUNTIME: shared by every game; your game goes in app/src/game/ and dom/game.js
+//
 // fixed_step.h — turns "a frame has started" into a whole number of app steps.
 //
 // The simulation always advances in steps of exactly 1 / APP_STEP_HZ seconds,
@@ -10,7 +12,9 @@
 #ifndef FIXED_STEP_H
 #define FIXED_STEP_H
 
-#include "app.h"
+#include <stdint.h>
+
+#include "runtime/runtime.h"
 
 typedef struct fixed_step {
     bool started;
@@ -19,7 +23,7 @@ typedef struct fixed_step {
 } fixed_step;
 
 // Call once per frame with the frame's time on the frame clock (bridge.h,
-// "Frame pacing": microseconds, wrapping). Runs app_step() as many times as
+// "Frame pacing": microseconds, wrapping). Runs runtime_step() as many times as
 // the time since the previous call pays for, and returns how many it ran.
 // The first call only starts the clock.
 //
@@ -32,6 +36,6 @@ typedef struct fixed_step {
 // time): a gap longer than 100 ms (a background tab, a debugger pause) counts
 // as 100 ms, and time beyond that is dropped. The world pauses rather than
 // fast-forwarding.
-uint32_t fixed_step_advance(fixed_step *fs, app_state *app, uint32_t frame_time_us);
+uint32_t fixed_step_advance(fixed_step *fs, runtime_state *runtime, uint32_t frame_time_us);
 
 #endif // FIXED_STEP_H

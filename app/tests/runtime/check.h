@@ -1,3 +1,5 @@
+// RUNTIME: shared by every game; your game goes in app/src/game/ and dom/game.js
+//
 // check.h — a minimal test harness: no framework needed for a project this size.
 //
 //   CHECK(cond)            records a failure (with file:line) and carries on
@@ -13,6 +15,13 @@
 
 static int check_failures = 0;
 
+// Whether `a` and `b` are within `tol` of each other (never, if either is
+// NaN). A function rather than inline in CHECK_NEAR, so that this header is
+// the one that uses <math.h>.
+static inline bool check_near(double a, double b, double tol) {
+    return fabs(a - b) <= tol;
+}
+
 #define CHECK(cond)                                                                                \
     do {                                                                                           \
         if (!(cond)) {                                                                             \
@@ -25,7 +34,7 @@ static int check_failures = 0;
     do {                                                                                           \
         double check_a_ = (double)(a);                                                             \
         double check_b_ = (double)(b);                                                             \
-        if (!(fabs(check_a_ - check_b_) <= (double)(tol))) {                                       \
+        if (!check_near(check_a_, check_b_, (double)(tol))) {                                      \
             fprintf(stderr, "%s:%d: CHECK_NEAR failed: %s = %g, %s = %g\n", __FILE__, __LINE__,    \
                     #a, check_a_, #b, check_b_);                                                   \
             check_failures++;                                                                      \

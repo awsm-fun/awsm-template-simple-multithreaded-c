@@ -1,4 +1,8 @@
-# The page (dom/): plain files, no build step, copied into dist/ as they are.
+# The page (dom/): plain files, no build step, copied into dist/ as they are:
+#
+#   dom/index.html   → dist/index.html    the page shell
+#   dom/game.js      → dist/game.js       your game's side of the page
+#   dom/runtime/     → dist/runtime/      the runtime: boot, HUD, panels, bridge view
 version: '3'
 
 tasks:
@@ -11,7 +15,7 @@ tasks:
       # Shim for static hosts that cannot send the COOP/COEP headers
       # (e.g. GitHub Pages): copy it next to the page and swap the marker
       # comment in index.html for its <script> tag. It must run before
-      # main.js, which is why it sits in <head> as a classic script.
+      # runtime/main.js, which is why it sits in <head> as a classic script.
       - |
         if [ "{{.COI}}" = "1" ]; then
           cp tools/coi-serviceworker.js dist/
