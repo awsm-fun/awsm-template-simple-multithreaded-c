@@ -321,6 +321,11 @@ function main() {
     if (event.ctrlKey || event.metaKey || event.altKey) return; // leave shortcuts alone
     const key = KEY_CODES[event.code];
     if (key === undefined) return;
+    // A button reached with the keyboard keeps the keys that press it. (One
+    // that was clicked does not: `:focus-visible` is the browser's own test
+    // for "focused from the keyboard", so the mouse never takes these keys
+    // away from the game.)
+    if (pressesFocusedControl(event)) return;
     event.preventDefault(); // no page scrolling on Space or the arrows
     // A held key repeats its keydown; only the first one is news. While no
     // app is listening nothing is remembered, so a key held through loading
@@ -380,6 +385,17 @@ function main() {
   };
   spawnApp();
   setStatus('loading scene…');
+}
+
+// Enter or Space on a control that has the keyboard's focus: the browser's
+// to handle (it presses the control), not the game's.
+function pressesFocusedControl(event) {
+  const pressing = event.code === 'Enter' || event.code === 'NumpadEnter' || event.code === 'Space';
+  return (
+    pressing &&
+    event.target instanceof Element &&
+    event.target.matches('button:focus-visible, select:focus-visible, a[href]:focus-visible')
+  );
 }
 
 try {

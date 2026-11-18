@@ -138,7 +138,7 @@ function buildGroups(panel) {
     header.className = 'stats-group';
     const label = document.createElement('span');
     const headline = document.createElement('span');
-    header.append(label, headline);
+    header.append(label, ' ', headline); // the space is for a screen reader
     const rows = document.createElement('div');
     rows.className = 'stats-rows';
     rows.id = `stats-rows-${group.id}`;
