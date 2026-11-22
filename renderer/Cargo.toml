@@ -23,9 +23,9 @@ crate-type = ["cdylib"]
 #   awsm-renderer-scene-loader `load_scene_for_player` and the `ParticleDriver`
 #                              that runs its emitters; `http` adds the
 #                              ready-made asset source that fetches bundle files
-awsm-renderer = "0.44.1"
-awsm-renderer-scene = "0.44.1"
-awsm-renderer-scene-loader = { version = "0.44.1", features = ["http"] }
+awsm-renderer = "0.44.2"
+awsm-renderer-scene = "0.44.2"
+awsm-renderer-scene-loader = { version = "0.44.2", features = ["http"] }
 
 # glam types cross the renderer's API, so this must be the renderer's version.
 glam = "0.32"
@@ -40,13 +40,12 @@ futures = "0.3"
 gloo-net = { version = "0.6", default-features = false, features = ["http"] }
 
 # ── wasm-bindgen ─────────────────────────────────────────────────────────────
-# These four are released together and the `-sys` crates pin their
-# wasm-bindgen exactly, so they move as one set. wasm-bindgen itself must match
-# the installed `wasm-bindgen` CLI version exactly, or the CLI refuses the
-# .wasm. To upgrade: bump all four here and install the matching CLI.
-wasm-bindgen = "=0.2.126"
-wasm-bindgen-futures = "=0.4.76"
-js-sys = "=0.3.103"
+# No exact pins: Cargo.lock records the versions, and the tasks require a
+# `wasm-bindgen` CLI of exactly the locked version. `cargo update` moves these
+# four together; afterwards install the CLI that `task setup` names.
+wasm-bindgen = "0.2.130"
+wasm-bindgen-futures = "0.4.80"
+js-sys = "0.3.107"
 
 # ── logging to the browser console ───────────────────────────────────────────
 tracing = "0.1"
@@ -54,7 +53,7 @@ tracing-subscriber = "0.3"
 tracing-web = "0.1"
 
 [dependencies.web-sys]
-version = "=0.3.103"
+version = "0.3.107"
 features = [
     "console",
     "DedicatedWorkerGlobalScope",

@@ -107,12 +107,12 @@ hint for any that is missing.
 | watchexec | `brew install watchexec` | 2.3 |
 | Rust (`cargo`, via rustup) | [rustup.rs](https://rustup.rs) | 1.100 stable |
 | Rust wasm target | `rustup target add wasm32-unknown-unknown` | |
-| wasm-bindgen CLI | `cargo install wasm-bindgen-cli --locked --version 0.2.126` | 0.2.126 |
+| wasm-bindgen CLI | `cargo install wasm-bindgen-cli --locked --version <locked>` | the version in `renderer/Cargo.lock` |
 | wasm-opt (Binaryen) | `brew install binaryen` | 123 |
 | clang-format (optional, for `task fmt`) | `brew install clang-format` | |
 
-The wasm-bindgen CLI must match the `wasm-bindgen` pin in
-`renderer/Cargo.toml` exactly. You also need a browser with WebGPU. No git
+The wasm-bindgen CLI must match the `wasm-bindgen` version in
+`renderer/Cargo.lock` exactly (`task setup` prints it). You also need a browser with WebGPU. No git
 submodules, and no separate LLVM: the renderer's `meshopt` dependency needs a
 clang that can target wasm, and the tasks use the one bundled with Emscripten
 (`em-config LLVM_ROOT`; export `CC_wasm32_unknown_unknown`,

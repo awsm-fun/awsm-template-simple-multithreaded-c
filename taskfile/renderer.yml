@@ -160,14 +160,14 @@ tasks:
     requires:
       vars: [PROFILE]
     vars:
-      BINDGEN_PIN:
-        sh: sed -n 's/^wasm-bindgen = "=\(.*\)"$/\1/p' "{{.RENDERER_SRC}}/Cargo.toml"
+      BINDGEN_VERSION:
+        sh: sed -n '/^name = "wasm-bindgen"$/{n;s/^version = "\(.*\)"$/\1/p;}' "{{.RENDERER_SRC}}/Cargo.lock"
     preconditions:
-      - sh: command -v wasm-bindgen >/dev/null
+      - sh: test "$(wasm-bindgen --version 2>/dev/null | cut -d' ' -f2)" = "{{.BINDGEN_VERSION}}"
         msg: |
-          wasm-bindgen not found. Install the CLI at exactly the version of the
-          `wasm-bindgen` crate pinned in renderer/Cargo.toml:
-              cargo install wasm-bindgen-cli --locked --version {{.BINDGEN_PIN}}
+          The wasm-bindgen CLI must be exactly the `wasm-bindgen` version in
+          renderer/Cargo.lock:
+              cargo install wasm-bindgen-cli --locked --version {{.BINDGEN_VERSION}}
     cmds:
       # From here until `finish`, dist/renderer is half-written: without a
       # stamp, nothing can mistake it for a finished build.

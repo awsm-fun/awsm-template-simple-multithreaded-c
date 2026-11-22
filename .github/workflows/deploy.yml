@@ -21,9 +21,6 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # Must equal the `wasm-bindgen` version pinned in renderer/Cargo.toml: the
-  # CLI refuses wasm built against any other.
-  WASM_BINDGEN_VERSION: "0.2.126"
   BINARYEN_VERSION: "123"
 
 jobs:
@@ -43,7 +40,12 @@ jobs:
         with:
           version: latest
 
-      # A prebuilt binary of the wasm-bindgen CLI.
+      # A prebuilt binary of the wasm-bindgen CLI, at the version in Cargo.lock:
+      # the CLI refuses wasm built against any other.
+      - name: Read the wasm-bindgen version
+        run: |
+          version=$(sed -n '/^name = "wasm-bindgen"$/{n;s/^version = "\(.*\)"$/\1/p;}' renderer/Cargo.lock)
+          echo "WASM_BINDGEN_VERSION=$version" >> "$GITHUB_ENV"
       - name: Install wasm-bindgen
         uses: taiki-e/install-action@v2
         with:

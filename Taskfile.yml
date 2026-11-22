@@ -70,9 +70,9 @@ tasks:
         need node         "brew install node         (18 or newer)"
         need watchexec    "brew install watchexec"
         need cargo        "install Rust: https://rustup.rs"
-        # The CLI must be exactly the version of the crate pinned in Cargo.toml.
-        bindgen_pin=$(sed -n 's/^wasm-bindgen = "=\(.*\)"$/\1/p' renderer/Cargo.toml)
-        need wasm-bindgen "cargo install wasm-bindgen-cli --locked --version $bindgen_pin"
+        # The CLI must be exactly the version of the crate in Cargo.lock.
+        bindgen_version=$(sed -n '/^name = "wasm-bindgen"$/{n;s/^version = "\(.*\)"$/\1/p;}' renderer/Cargo.lock)
+        need wasm-bindgen "cargo install wasm-bindgen-cli --locked --version $bindgen_version"
         need wasm-opt     "brew install binaryen"
         want clang-format "brew install clang-format  (for task fmt)"
         if command -v rustup >/dev/null 2>&1; then
