@@ -31,14 +31,17 @@ pub enum Phase {
     /// Everything up to the transforms being written: waking the app, the
     /// event rings, sampling and interpolating its snapshots.
     ReadApp,
+    /// The scene's own motion: its clips, texture UV flows and particles.
+    Animate,
     UpdateTransforms,
     SetCamera,
     /// `AwsmRenderer::render`: encoding every pass and submitting.
     Render,
 }
 
-const PHASE_NAMES: [&str; 4] = [
+const PHASE_NAMES: [&str; 5] = [
     "read app state + interpolate",
+    "clips + particles",
     "update transforms",
     "set camera",
     "render (encode + submit)",
@@ -55,7 +58,7 @@ pub struct Profile {
 
     /// Running totals of the phases, in milliseconds, and the frames they
     /// (and the renderer's scopes, which run on the same frames) cover.
-    phase_ms: [f64; 4],
+    phase_ms: [f64; 5],
     frames: u64,
     /// Per renderer scope: the renderer's total as last read, and our own
     /// running total over the frames counted above.

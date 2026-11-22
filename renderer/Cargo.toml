@@ -20,11 +20,12 @@ crate-type = ["cdylib"]
 #   awsm-renderer              the renderer (re-exports its WebGPU layer as
 #                              `awsm_renderer::core`)
 #   awsm-renderer-scene        the `Scene` type and the `scene.toml` parser
-#   awsm-renderer-scene-loader `load_scene_for_player`; `http` adds the
+#   awsm-renderer-scene-loader `load_scene_for_player` and the `ParticleDriver`
+#                              that runs its emitters; `http` adds the
 #                              ready-made asset source that fetches bundle files
-awsm-renderer = "0.43.0"
-awsm-renderer-scene = "0.43.0"
-awsm-renderer-scene-loader = { version = "0.43.0", features = ["http"] }
+awsm-renderer = "0.44.1"
+awsm-renderer-scene = "0.44.1"
+awsm-renderer-scene-loader = { version = "0.44.1", features = ["http"] }
 
 # glam types cross the renderer's API, so this must be the renderer's version.
 glam = "0.32"

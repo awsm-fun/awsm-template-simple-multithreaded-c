@@ -71,7 +71,7 @@ what it is per:
 | frame budget | the time one display refresh allows (16.7 ms at 60 Hz) and the headroom left by whichever of the GPU and the threads uses most of it | the GPU and each thread: time per frame, out of the budget; and, for reference, the latency of a frame (renderer + GPU) |
 | display | refresh rate and frames per second | missed frames |
 | GPU | GPU time per frame | per render pass (on Apple GPUs the passes overlap, so they add up to more than the frame) |
-| renderer (render worker) | the render worker's CPU time per frame | its phases (reading the app's state, transforms, camera, `render()`) and, under `render()`, what awsm-renderer spends preparing the frame (uploads, bind groups, …), encoding each pass and submitting, with what is left over |
+| renderer (render worker) | the render worker's CPU time per frame | its phases (reading the app's state, the scene's clips and particles, transforms, camera, `render()`) and, under `render()`, what awsm-renderer spends preparing the frame (uploads, bind groups, …), encoding each pass and submitting, with what is left over |
 | app (C, app worker) | the app's CPU time per fixed step | steps per second, frames the app was late for, and the phases of a step |
 | page (main thread) | the main thread's work per frame | |
 
@@ -211,6 +211,7 @@ sequenceDiagram
         A->>A: run the whole 1/120 s steps since frame N-1
         A->>B: publish one snapshot per step, stamped with its time
     and renderer
+        R->>R: advance the scene's clips and particles
         R->>B: copy the two snapshots around (frame N-1 time minus one step)
         R->>R: interpolate (lerp + slerp), then draw
     end
@@ -476,6 +477,12 @@ The demo game expects, by name (`GAME_OBJECTS[]` in `app/src/game/game.c`):
   is size in metres (`UNIT_SPHERE_RADIUS`, `UNIT_PLANE_HALF` in
   `app/src/game/game.h`, used by `move_ball()` and `keep_on_ground()`). See
   the header comment of `scene.toml`.
+
+Clips, scrolling textures and particles in the scene play on their own,
+advanced each frame before the app's poses are applied, so a node the app
+binds follows the app (keep clips off those nodes). An animated camera works:
+the view is read off the camera node. Anti-aliasing comes from Settings, not
+from the scene: the bundle's authored setting is ignored.
 
 ## Limitations
 

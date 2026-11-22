@@ -14,10 +14,10 @@ use std::collections::HashMap;
 use awsm_renderer::camera::{CameraKey, CameraParams};
 use awsm_renderer::transforms::{Transform, TransformKey};
 use awsm_renderer::AwsmRenderer;
-use awsm_renderer_scene::{EditorNode, NodeId, NodeKind, Scene};
+use awsm_renderer_scene::{AntiAliasingConfig, EditorNode, NodeId, NodeKind, Scene};
 use awsm_renderer_scene_loader::assets::HttpAssets;
 use awsm_renderer_scene_loader::camera::camera_params_from_config;
-use awsm_renderer_scene_loader::{load_scene_for_player, LoadedScene};
+use awsm_renderer_scene_loader::{load_scene_for_player, LoadedScene, ParticleDriver};
 
 use crate::bridge::bridge_hash;
 use crate::page;
@@ -32,6 +32,9 @@ pub struct SceneIndex {
     by_name: HashMap<u32, usize>,
     /// The camera to view the scene through; `None` if the scene has none.
     pub camera: Option<SceneCamera>,
+    /// The scene's particle emitters. The loader builds them; they only move
+    /// when ticked, once per frame.
+    pub particles: ParticleDriver,
 }
 
 /// A named scene node, with everything needed to put it back the way it was
@@ -86,11 +89,20 @@ pub async fn load(renderer: &mut AwsmRenderer, base_url: &str) -> Result<SceneIn
         futures::join!(renderer.ensure_config_pipelines(), fetch_scene(&scene_url));
     let compiled =
         compiled.map_err(|err| format!("could not compile the render pipelines: {err}"))?;
-    let scene = scene?;
+    let mut scene = scene?;
     page::post_progress(&format!(
         "core pipelines ready ({compiled}) · scene parsed ({} nodes)",
         scene.nodes.len()
     ));
+
+    // The anti-aliasing is the page's choice (its Settings), and the renderer
+    // already runs it. The loader applies the scene's authored anti-aliasing,
+    // so the scene is given the renderer's: the loader then changes nothing,
+    // and nothing is compiled for a mode this session does not use.
+    scene.post_process.anti_aliasing = AntiAliasingConfig {
+        msaa: renderer.anti_aliasing.msaa_sample_count.is_some(),
+        smaa: renderer.anti_aliasing.smaa,
+    };
 
     // The loader asks for bundle-relative paths (`assets/<id>.png`, …) and
     // this fetches them from next to `scene.toml`.
@@ -116,9 +128,11 @@ pub async fn load(renderer: &mut AwsmRenderer, base_url: &str) -> Result<SceneIn
     let mut cameras = Vec::new();
     index_nodes(&scene.nodes, renderer, &loaded, &mut index, &mut cameras);
     index.camera = pick_camera(&scene, &cameras, &loaded);
+    index.particles = ParticleDriver::new(&loaded);
     tracing::info!(
-        "scene loaded: {} named nodes, {}",
+        "scene loaded: {} named nodes, {} particle emitters, {}",
         index.nodes.len(),
+        index.particles.len(),
         if index.camera.is_some() {
             "viewed through its camera"
         } else {
