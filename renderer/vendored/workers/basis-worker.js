@@ -1,9 +1,9 @@
 // Basis codec worker — hosts the vendored Basis Universal modules
-// (served from vendor/basis/) in an isolated scope, off the main thread.
+// (web/vendor/basis/) in an isolated scope, off the main thread.
 //
 // Both vendored builds are Emscripten MODULARIZE+UMD and export the SAME
 // global factory name `BASIS`, so each importScripts() is followed by a
-// capture-and-delete of the global.
+// capture-and-delete of the global (see web/vendor/basis/README.md).
 //
 // Protocol (versioned; every request carries a client-chosen `id` echoed in
 // the reply):

@@ -69,7 +69,7 @@ const MIN_MAX_TEXTURE_DIMENSION_2D: u32 = 8192;
 /// one release to the next, so after a deployed upgrade a browser could
 /// otherwise pair a cached old transcoder with the new worker script. Bump it
 /// together with the awsm-renderer version in Cargo.toml.
-const BASIS_VERSION: &str = "0.42.0";
+const BASIS_VERSION: &str = "0.44.1";
 
 /// Frames drawn before the page is told the scene is on screen. The very
 /// first frames after a load still have uploads settling; this is when the
