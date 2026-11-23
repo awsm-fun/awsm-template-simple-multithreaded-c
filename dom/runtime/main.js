@@ -346,6 +346,20 @@ function main() {
     if (document.hidden) releaseAllKeys();
   });
 
+  // Leaving the page (a link, the back button) can keep it in the browser's
+  // back/forward cache instead of unloading it, and its workers go on running
+  // there: the renderer keeps drawing frames nobody sees, on the GPU the next
+  // page needs. A page put in that cache stops its workers, and one brought
+  // back from it starts again from the top.
+  window.addEventListener('pagehide', (event) => {
+    if (!event.persisted) return;
+    renderer.terminate();
+    app?.worker.terminate();
+  });
+  window.addEventListener('pageshow', (event) => {
+    if (event.persisted) window.location.reload();
+  });
+
   // ── Per frame: game events (the app → dom ring) ──
   //
   // This is how the game tells the page something happened; game.js's
