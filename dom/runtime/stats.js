@@ -7,8 +7,10 @@
 // under the thread that spent it, and every number says its unit and what it
 // is per:
 //
-//   frame budget               the time one display refresh allows, how much
-//                              of it the GPU and each thread use per frame,
+//   frame budget               the time one frame allows (one display
+//                              refresh, or N while the renderer paces its
+//                              frames to every Nth: bridge.h, frame_interval),
+//                              how much of it the GPU and each thread use,
 //                              and the headroom the largest of them leaves.
 //                              CPU and GPU work run in parallel, so each must
 //                              fit the budget on its own; they do not add up,
@@ -16,8 +18,10 @@
 //                              shows as missed frames.
 //   display                    the display's refresh rate (measured here, from
 //                              this thread's own animation frames), the frames
-//                              the renderer presented per second, and the
-//                              refreshes that went by without a new frame.
+//                              the renderer presented per second, the
+//                              refreshes that went by without a new frame
+//                              (not counting those it skipped on purpose),
+//                              and its pacing.
 //   GPU                        the GPU's time per frame, from the renderer's
 //                              timestamp queries (`n/a` without them). Its
 //                              rows are the passes; on GPUs that run passes
@@ -114,6 +118,9 @@ function duration(ms) {
 }
 
 const smooth = (ema, value) => (ema == null ? value : ema + (value - ema) * EMA_ALPHA);
+
+// 2 → "2nd", 3 → "3rd", 4 → "4th".
+const ordinal = (n) => `${n}${n === 2 ? 'nd' : n === 3 ? 'rd' : 'th'}`;
 
 // For the frame budget's rows: milliseconds to one decimal and a share of the
 // budget, neither of which may read as nothing when it is something.
@@ -306,6 +313,8 @@ export function installStats({ getBridge, onHelp }) {
   // next window evens it out.
   let missedRate = null;
   let missedTotal = 0;
+  // Refreshes per presented frame the renderer is pacing at (1: every one).
+  let frameInterval = 1;
   // frameCount when counting could first start (see WARMUP_FRAMES).
   let warmFrame = null;
   // The timing table: each entry's previous reading and its smoothed mean,
@@ -373,14 +382,16 @@ export function installStats({ getBridge, onHelp }) {
     if (periodMs === null || lanes.length === 0) {
       view.set('budget', 'measuring…');
     } else {
-      const budget = periodMs.toFixed(1);
-      const headroom = periodMs - Math.max(...lanes.map(([, ms]) => ms));
+      // A paced renderer has N refreshes per frame: that is its budget.
+      const frameMs = periodMs * frameInterval;
+      const budget = frameMs.toFixed(1);
+      const headroom = frameMs - Math.max(...lanes.map(([, ms]) => ms));
       const rows = lanes.map(([label, ms, lane]) => [
         label,
-        `${tenths(ms)} / ${budget} ms (${share(ms / periodMs)})`,
+        `${tenths(ms)} / ${budget} ms (${share(ms / frameMs)})`,
         0,
         false,
-        { lane, share: ms / periodMs },
+        { lane, share: ms / frameMs },
       ]);
       if (gpuEma !== null && frameWorkEma !== null) {
         rows.push([
@@ -390,7 +401,8 @@ export function installStats({ getBridge, onHelp }) {
       }
       const left =
         headroom < 0 ? `over by ${(-headroom).toFixed(1)} ms` : `headroom ${headroom.toFixed(1)} ms`;
-      view.set('budget', `${budget} ms (${hz}) · ${left}`, rows, headroom < 0);
+      const rate = frameInterval > 1 ? `${(1000 / frameMs).toFixed(0)} fps of ${hz}` : hz;
+      view.set('budget', `${budget} ms (${rate}) · ${left}`, rows, headroom < 0);
     }
     const fps = `${fpsEma.toFixed(0)}`;
     view.set('display', `${hz ?? 'measuring…'} · ${fps} fps`, [
@@ -400,6 +412,7 @@ export function installStats({ getBridge, onHelp }) {
         'missed frames',
         missedRate === null ? '—' : `${missedRate.toFixed(0)} / s · ${Math.max(missedTotal, 0)} total`,
       ],
+      ['pacing', frameInterval > 1 ? `every ${ordinal(frameInterval)} refresh, by choice` : 'every refresh'],
     ]);
 
     let gpu = '—';
@@ -542,11 +555,14 @@ export function installStats({ getBridge, onHelp }) {
       gpuEmptyWindows += 1;
     }
     // Refreshes that went by in the window, by the renderer's own frame
-    // timestamps, minus the frames it presented in them.
+    // timestamps, minus the frames it presented in them and the refreshes it
+    // skipped on purpose (frame pacing).
+    frameInterval = stats.frameInterval;
     const periodMs = refresh.periodMs();
     const spanMs = ((stats.frameSpanUs - previous.frameSpanUs) >>> 0) / 1000;
+    const pacedSkips = (stats.pacedSkips - previous.pacedSkips) >>> 0;
     if (periodMs !== null && spanMs <= now - previous.at + PAUSE_SLACK_MS) {
-      const missed = Math.round(spanMs / periodMs) - frames;
+      const missed = Math.round(spanMs / periodMs) - frames - pacedSkips;
       missedTotal += missed;
       missedRate = Math.max(missed, 0) / seconds;
     }

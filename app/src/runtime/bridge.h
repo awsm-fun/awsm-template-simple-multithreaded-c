@@ -188,7 +188,16 @@ typedef struct bridge_stats {
     // measuring the detail that is asked for; this is not a running total.
     _Atomic uint32_t detail; // 28
 
-    uint32_t reserved[8]; // 32
+    // Written by a renderer that paces its frames (draws on every Nth refresh
+    // only, to give a slow GPU an even rate). frame_interval is the N it is
+    // drawing at now; paced_skips counts the refreshes it skipped on purpose,
+    // so the page tells them from missed frames and measures the frame budget
+    // against N refreshes. A renderer that draws on every refresh leaves both
+    // at 0, which the page reads as N = 1.
+    _Atomic uint32_t frame_interval; // 32  refreshes per frame (0 = 1)
+    _Atomic uint32_t paced_skips;    // 36  refreshes skipped on purpose
+
+    uint32_t reserved[6]; // 40
 } bridge_stats;           // 64
 
 // bridge_stats.detail
@@ -373,6 +382,8 @@ static inline uint32_t bridge_hash(const char *name) {
 static_assert(sizeof(_Atomic uint32_t) == 4, "atomics must be plain 32-bit words");
 static_assert(sizeof(bridge_header) == 128, "bridge_header size");
 static_assert(sizeof(bridge_stats) == 64, "bridge_stats size");
+static_assert(offsetof(bridge_stats, frame_interval) == 32, "bridge_stats.frame_interval");
+static_assert(offsetof(bridge_stats, paced_skips) == 36, "bridge_stats.paced_skips");
 static_assert(sizeof(bridge_pose) == 32, "bridge_pose size");
 static_assert(sizeof(bridge_snapshot_header) == 16, "bridge_snapshot_header size");
 static_assert(sizeof(bridge_ring) == 64, "bridge_ring size");

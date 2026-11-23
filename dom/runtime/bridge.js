@@ -49,6 +49,8 @@ export const LAYOUT = {
     gpu_frame_count: 20,
     app_late: 24,
     detail: 28, // written by this page: the `detail` bits below
+    frame_interval: 32,
+    paced_skips: 36,
   },
   // BRIDGE_DETAIL_*: the breakdowns the stats panel is showing.
   detail: { APP: 1, RENDERER: 2, GPU: 4 },
@@ -300,6 +302,10 @@ export class Bridge {
       gpuFrameUs: load(s + STATS.gpu_frame_us),
       gpuFrameCount: load(s + STATS.gpu_frame_count),
       appLate: load(s + STATS.app_late),
+      // Refreshes per presented frame while the renderer paces (0 from one
+      // that does not: every refresh), and the refreshes it skipped on purpose.
+      frameInterval: Math.max(load(s + STATS.frame_interval), 1),
+      pacedSkips: load(s + STATS.paced_skips),
       latestStep: load(this.#base + HEADER.latest_step),
     };
   }
