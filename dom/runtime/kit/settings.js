@@ -1,4 +1,4 @@
-// awsm-renderer-kit v0.1.1: js/settings.js, copied by the kit's scripts/sync-js.sh.
+// awsm-renderer-kit v0.1.2: js/settings.js, copied by the kit's scripts/sync-js.sh.
 // Do not edit this copy: change the kit, then sync again.
 //
 // settings.js — the graphics settings and how the canvas is sized: the JS

@@ -33,8 +33,8 @@ awsm-renderer-scene-loader = { version = "0.46.0", features = ["http"] }
 #   awsm-renderer-stats     the stats panel's numbers: frame windows,
 #                           smoothing, renderer CPU and GPU timings, the report
 # The page side is the kit's JS twins, synced into dom/runtime/kit/.
-awsm-renderer-settings = { git = "https://github.com/awsm-fun/awsm-renderer-kit", tag = "v0.1.1", features = ["renderer", "scene"] }
-awsm-renderer-stats = { git = "https://github.com/awsm-fun/awsm-renderer-kit", tag = "v0.1.1", features = ["renderer"] }
+awsm-renderer-settings = { git = "https://github.com/awsm-fun/awsm-renderer-kit", tag = "v0.1.2", features = ["renderer", "scene"] }
+awsm-renderer-stats = { git = "https://github.com/awsm-fun/awsm-renderer-kit", tag = "v0.1.2", features = ["renderer"] }
 
 # glam types cross the renderer's API, so this must be the renderer's version.
 glam = "0.32"
