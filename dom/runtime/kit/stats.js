@@ -1,4 +1,4 @@
-// awsm-renderer-kit v0.1.2: js/stats.js, copied by the kit's scripts/sync-js.sh.
+// awsm-renderer-kit v0.1.3: js/stats.js, copied by the kit's scripts/sync-js.sh.
 // Do not edit this copy: change the kit, then sync again.
 //
 // stats.js — the stats panel and the button that shows and hides it: the JS

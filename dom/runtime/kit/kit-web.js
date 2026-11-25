@@ -1,4 +1,4 @@
-// awsm-renderer-kit v0.1.2: js/kit-web.js, copied by the kit's scripts/sync-js.sh.
+// awsm-renderer-kit v0.1.3: js/kit-web.js, copied by the kit's scripts/sync-js.sh.
 // Do not edit this copy: change the kit, then sync again.
 //
 // kit-web.js — browser helpers shared by settings.js and stats.js: the twin
@@ -67,7 +67,7 @@ export function coarsePointer() {
 // (`kitVersion`), and the page warns when the two differ (a project that
 // bumped the crates' tag without syncing these files, or the reverse).
 // scripts/check.sh keeps it equal to Cargo.toml's.
-export const KIT_VERSION = '0.1.2';
+export const KIT_VERSION = '0.1.3';
 
 // Shows or hides `element`: its `hidden` attribute, and an inline
 // `display: none` while hidden. The attribute alone loses to any rule that
