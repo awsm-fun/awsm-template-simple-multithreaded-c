@@ -183,9 +183,9 @@ typedef struct bridge_stats {
     _Atomic uint32_t gpu_frame_count; // 20  ... this many measured frames
     _Atomic uint32_t app_late;        // 24  frames drawn before the app had caught up
 
-    // Written by the PAGE: which breakdowns its stats panel is showing right
-    // now (BRIDGE_DETAIL_* bits). The app and the renderer only spend time
-    // measuring the detail that is asked for; this is not a running total.
+    // Written by the RENDERER, from the groups the page's stats panel has
+    // open (BRIDGE_DETAIL_* bits). The app only spends time measuring the
+    // detail that is asked for; this is not a running total.
     _Atomic uint32_t detail; // 28
 
     // Written by a renderer that paces its frames (draws on every Nth refresh

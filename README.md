@@ -60,7 +60,8 @@ steps below say when.
 On screen: a red ball on a 12 × 12 m ground, a HUD (top left), **Stats**
 (bottom left), **About** (bottom centre: what the demo is, with a second tab
 that explains every number in the Stats panel) and **Settings** (bottom
-right: render resolution and anti-aliasing).
+right: render resolution and anti-aliasing: Off, SMAA, MSAA 4×, TAA, or TAA
+upscaling from 67%, 58% or 50% of the width and height).
 
 The Stats panel opens with the frame budget and then has one group per
 thread, so each number sits under the thread that spent it, with its unit and
@@ -76,20 +77,26 @@ what it is per:
 | page (main thread) | the main thread's work per frame | |
 
 A header toggles its group, and the choice is remembered. The breakdowns are
-only measured while their group is open (`profile.rs` in the renderer,
-`runtime_state.profile` in the app), so a collapsed panel costs nothing
-extra.
+only measured while their group is open (the render worker hears which are
+open; the app sees it in the bridge block, `runtime_state.profile`), so a
+collapsed panel costs nothing extra. The render worker measures and formats
+every number and posts the panel a report about once a second.
 
 CPU and GPU work run in parallel, so each must fit the frame budget on its
 own; they do not add up, except when the CPU waits on the GPU, which shows as
 missed frames.
 
-The settings start from sensible defaults (`dom/runtime/settings.js`).
-Resolution is native, held to a pixel budget of 2.8 million pixels but never
-below one device pixel per CSS pixel, so a big high-DPI window starts below
-100% and a small one at 100%; touch devices and software GPUs start lower
-still, and with anti-aliasing off. A choice you make is remembered in
-`localStorage` and always wins; `?reset` in the URL forgets it. The storage
+The Settings and the Stats panel are
+[awsm-renderer-kit](https://github.com/awsm-fun/awsm-renderer-kit)'s, shared
+by every awsm-renderer app: its Rust crates in the renderer, and its JS twins
+in `dom/runtime/kit/` (synced copies; update them with the kit's
+`scripts/sync-js.sh`, never by hand). The settings start from sensible
+defaults: TAA on a desktop; resolution native, held to a pixel budget of 2.8
+million pixels but never below one device pixel per CSS pixel, so a big
+high-DPI window starts below 100% and a small one at 100%; touch devices and
+software GPUs start lower still, and with anti-aliasing off. A choice you make
+is remembered in `localStorage` and always wins; `?reset` in the URL forgets
+it, and `?aa=<mode>` (`taa-quality`, `msaa`, …) tries a mode for one visit. The storage
 keys share one prefix (`STORAGE_PREFIX` in `dom/game.js`): change it for your
 own project, since everything on the same origin shares `localStorage`.
 
@@ -184,6 +191,7 @@ app/                          the C app: a CMake project, Emscripten only
 renderer/                     the Rust crate: cargo + wasm-bindgen (+ wasm-opt)
   src/bridge.rs               the renderer's mirror of bridge.h
   src/render.rs               start-up, the frame loop, attach / detach
+  src/stats.rs                the stats panel's phases and the app's group
   src/scene.rs                loads scene.toml, indexes its named nodes
   src/slots.rs                which scene node each pose slot drives
 dom/                          the page
@@ -191,7 +199,8 @@ dom/                          the page
   game.js                     YOURS: your game's side of the page
   runtime/main.js, style.css  boot, the workers, the keyboard, the HUD
   runtime/bridge.js           the page's mirror of bridge.h
-  runtime/stats.js, …         the panels (also loading, settings, about…)
+  runtime/about.js, …         the panels (also loading, modal…)
+  runtime/kit/                Settings and Stats: awsm-renderer-kit's JS twins
 media/bundle/scene.toml       YOURS: a sun, the ground, a ball and a camera
 tools/                        dev-server, check-bridge, coi-serviceworker
 Taskfile.yml, taskfile/       every workflow

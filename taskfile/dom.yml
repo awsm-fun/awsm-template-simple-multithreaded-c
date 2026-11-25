@@ -32,6 +32,6 @@ tasks:
       # As modules: checked as plain scripts, node gives up at the first
       # `import` without looking at the rest of the file.
       - |
-        for file in dom/*.js dom/runtime/*.js; do
+        for file in dom/*.js dom/runtime/*.js dom/runtime/kit/*.js; do
           node --input-type=module --check < "$file" || { echo "dom:check: syntax error in $file"; exit 1; }
         done

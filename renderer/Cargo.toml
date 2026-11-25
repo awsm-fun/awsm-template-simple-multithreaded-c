@@ -23,9 +23,18 @@ crate-type = ["cdylib"]
 #   awsm-renderer-scene-loader `load_scene_for_player` and the `ParticleDriver`
 #                              that runs its emitters; `http` adds the
 #                              ready-made asset source that fetches bundle files
-awsm-renderer = "0.45.0"
-awsm-renderer-scene = "0.45.0"
-awsm-renderer-scene-loader = { version = "0.45.0", features = ["http"] }
+awsm-renderer = "0.46.0"
+awsm-renderer-scene = "0.46.0"
+awsm-renderer-scene-loader = { version = "0.46.0", features = ["http"] }
+
+# ── Settings and stats, shared by every awsm-renderer app ───────────────────
+#   awsm-renderer-settings  the anti-aliasing modes (with TAA), applying one,
+#                           the GPU probe, and the settings messages
+#   awsm-renderer-stats     the stats panel's numbers: frame windows,
+#                           smoothing, renderer CPU and GPU timings, the report
+# The page side is the kit's JS twins, synced into dom/runtime/kit/.
+awsm-renderer-settings = { git = "https://github.com/awsm-fun/awsm-renderer-kit", tag = "v0.1.1", features = ["renderer", "scene"] }
+awsm-renderer-stats = { git = "https://github.com/awsm-fun/awsm-renderer-kit", tag = "v0.1.1", features = ["renderer"] }
 
 # glam types cross the renderer's API, so this must be the renderer's version.
 glam = "0.32"
@@ -57,12 +66,6 @@ version = "0.3.107"
 features = [
     "console",
     "DedicatedWorkerGlobalScope",
-    # The adapter facts the page sizes the canvas with (report_gpu_info in
-    # src/render.rs): software fallback or not, largest 2D texture.
-    "Gpu",
-    "GpuAdapter",
-    "GpuAdapterInfo",
-    "GpuSupportedLimits",
     "OffscreenCanvas",
     "Performance",
     "RequestCache",
@@ -86,3 +89,4 @@ debug = false
 opt-level = "s"
 lto = true
 codegen-units = 1
+

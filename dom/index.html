@@ -17,13 +17,16 @@
 
     <!-- Everything drawn over the canvas. runtime/main.js fills in the HUD
          (with your game's words from game.js); the behaviour lives in
-         runtime/stats.js, about.js and settings.js. Hidden as a whole when
-         the page cannot start (runtime/loading.js, fatal()). -->
+         runtime/about.js and the awsm-renderer-kit twins in runtime/kit/
+         (settings.js adds the Settings modal, the reduced-quality notice and
+         the compiling overlay in here; stats.js fills the stats panel).
+         Hidden as a whole when the page cannot start (runtime/loading.js,
+         fatal()). -->
     <div id="ui">
       <div class="hud" id="hud" aria-live="off"></div>
 
-      <!-- Top right, opt-in through the Stats button. stats.js fills it with
-           one collapsible group per thread. -->
+      <!-- Top right, opt-in through the Stats button. runtime/kit/stats.js
+           fills it with one collapsible group per thread. -->
       <div class="stats" id="stats" hidden></div>
 
       <button class="stats-btn" id="stats-btn" type="button">Stats</button>
@@ -249,60 +252,6 @@
               </dd>
             </dl>
           </div>
-        </div>
-      </div>
-
-      <div class="settings-overlay" id="settings" hidden>
-        <div class="settings-modal">
-          <button class="about-close" type="button" aria-label="Close" data-close>×</button>
-          <h2>Settings</h2>
-          <div class="settings-row">
-            <label class="settings-label" id="res-label" for="res-slider">Resolution — 100%</label>
-            <input
-              class="res-slider"
-              id="res-slider"
-              type="range"
-              min="50"
-              max="100"
-              step="5"
-              aria-label="render resolution"
-            />
-          </div>
-          <div class="settings-row">
-            <label class="settings-label" for="aa-select">Anti-aliasing</label>
-            <select class="settings-select" id="aa-select" aria-label="anti-aliasing">
-              <option value="off">Off</option>
-              <option value="smaa">SMAA</option>
-              <option value="msaa">MSAA 4×</option>
-            </select>
-          </div>
-          <p class="settings-hint">Adjust these settings if your framerate is low.</p>
-        </div>
-      </div>
-
-      <!-- Shown when the touch-device defaults lowered the quality (settings.js). -->
-      <div class="settings-overlay" id="quality-notice" hidden>
-        <div class="settings-modal">
-          <button class="about-close" type="button" aria-label="Close" data-close>×</button>
-          <h2>Display Quality Reduced</h2>
-          <p class="notice-text">
-            Display quality was reduced to keep the frame rate up on touch devices. You can adjust
-            the resolution and anti-aliasing any time in Settings (bottom right).
-          </p>
-          <button class="notice-ok" type="button" data-close>OK</button>
-        </div>
-      </div>
-
-      <!-- While the renderer recompiles for an anti-aliasing change. It cannot
-           be dismissed; it goes away when the renderer says it is done. -->
-      <div class="settings-overlay compile-overlay" id="aa-compile" hidden>
-        <div class="settings-modal">
-          <h2>Compiling Pipelines</h2>
-          <p class="notice-text">
-            Rebuilding the render pipelines for the new anti-aliasing settings. The first switch in
-            each direction compiles shaders; after that it's cached and instant.
-          </p>
-          <p class="settings-hint" id="aa-compile-line"></p>
         </div>
       </div>
     </div>

@@ -48,7 +48,7 @@ export const LAYOUT = {
     gpu_frame_us: 16,
     gpu_frame_count: 20,
     app_late: 24,
-    detail: 28, // written by this page: the `detail` bits below
+    detail: 28, // written by the render worker: the `detail` bits below
     frame_interval: 32,
     paced_skips: 36,
   },
@@ -287,8 +287,13 @@ export class Bridge {
   }
 
   // ── Stats ───────────────────────────────────────────────────────────────
+  //
+  // The stats panel no longer reads these: the render worker measures and
+  // posts it a report (awsm-renderer-kit), and it owns `detail` too (from
+  // the groups the panel has open), so the page never writes the block.
+  // These readers stay for a game's own tools (an auto-tuner, a debug HUD).
 
-  // The counters for the stats panel (bridge_stats), plus the newest
+  // The counters in bridge_stats, plus the newest
   // published step. All are running totals that wrap at 2^32: subtract two
   // readings with `(b - a) >>> 0`.
   readStats() {
@@ -308,12 +313,6 @@ export class Bridge {
       pacedSkips: load(s + STATS.paced_skips),
       latestStep: load(this.#base + HEADER.latest_step),
     };
-  }
-
-  // Tells the app and the renderer which breakdowns the stats panel is
-  // showing (DETAIL bits). They only measure the detail that is asked for.
-  setDetail(bits) {
-    Atomics.store(this.#u32, (this.#stats + STATS.detail) >>> 2, bits >>> 0);
   }
 
   // The timing table: every entry in use, as { slot, kind, name, totalNs,

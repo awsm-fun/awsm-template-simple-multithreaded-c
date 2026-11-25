@@ -9,17 +9,20 @@
 // substance happens in that Rust code. This file only loads it and passes the
 // page's messages on:
 //
-//     { type: 'init', canvas, baseUrl, width, height, msaa, smaa }  →  init(...)
-//     { type: 'resize', width, height }                             →  resize(...)
-//     { type: 'anti-alias', msaa, smaa }                            →  antiAlias(...)
-//     { type: 'attach', memory, bridgePtr }                         →  attach(...)
-//     { type: 'detach' }                                            →  detach()
+//     { type: 'init', canvas, baseUrl, width, height, aa }  →  init(...)
+//     { type: 'resize', width, height }                     →  resize(...)
+//     { type: 'attach', memory, bridgePtr }                 →  attach(...)
+//     { type: 'detach' }                                    →  detach()
+//     { type: 'anti-alias', mode }, { type: 'stats-view', … },
+//     { type: 'stats-page', … }                             →  kit(message)
 //
-// Messages back to the page (`loading`, `progress`, `gpu-info`, `ready`,
-// `aa-compile-start`, `aa-compile-progress`, `aa-compile-done`, `error`) are
-// posted by the Rust code itself; the only one sent from here is `error`.
+// The last three are awsm-renderer-kit's (Settings and the stats panel),
+// passed on whole. Messages back to the page (`settings-options`, `loading`,
+// `progress`, `ready`, `aa-compile-start`, `aa-compile-progress`,
+// `aa-compile-done`, `stats`, `error`) are posted by the Rust code itself;
+// the only one sent from here is `error`.
 
-import loadWasm, { init, resize, antiAlias, attach, detach } from './renderer.js';
+import loadWasm, { init, resize, attach, detach, kit } from './renderer.js';
 
 // The page does not wait for the wasm module before it starts sending, so
 // messages can arrive while the module is still downloading and compiling.
@@ -41,15 +44,16 @@ function deliver(message) {
                     message.baseUrl,
                     message.width,
                     message.height,
-                    Boolean(message.msaa),
-                    Boolean(message.smaa),
+                    String(message.aa),
                 );
                 break;
             case 'resize':
                 resize(message.width, message.height);
                 break;
             case 'anti-alias':
-                antiAlias(Boolean(message.msaa), Boolean(message.smaa));
+            case 'stats-view':
+            case 'stats-page':
+                kit(message);
                 break;
             case 'attach':
                 attach(message.memory, message.bridgePtr);

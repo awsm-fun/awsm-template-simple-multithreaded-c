@@ -19,22 +19,30 @@
 //
 // The panels over the canvas each have a module of their own:
 //
-//   loading.js    the loading screen and the "cannot start" screen
-//   settings.js   resolution and anti-aliasing (the Settings button), and
-//                 the canvas size that follows from them
-//   stats.js      the stats panel (the Stats button)
-//   about.js      the About button
+//   loading.js        the loading screen and the "cannot start" screen
+//   kit/settings.js   resolution and anti-aliasing (the Settings button), and
+//                     the canvas size that follows from them
+//   kit/stats.js      the stats panel (the Stats button)
+//   about.js          the About button
+//
+// The two in kit/ are awsm-renderer-kit's page side, shared by every
+// awsm-renderer app: copies synced from the kit (its scripts/sync-js.sh),
+// not edited here. They show what the render worker sends (the Settings
+// menu and defaults in `settings-options`, a stats report each second in
+// `stats`); the policy and the numbers live in the kit's Rust crates, which
+// the renderer links.
 //
 // This file wires them to the workers, and owns the keyboard and the HUD.
 
-import { GAME_NAME, HUD_CONTROLS, KEY_CODES, onGameEvent } from '../game.js';
+import { GAME_NAME, HUD_CONTROLS, KEY_CODES, STORAGE_PREFIX, onGameEvent } from '../game.js';
 import { Bridge, RECORD } from './bridge.js';
 import { installAbout } from './about.js';
 import { fatal, loadingDone, loadingLog, loadingStart } from './loading.js';
-import { Settings, resetSettingsIfAsked } from './settings.js';
-import { installStats } from './stats.js';
+import { Settings, resetSettingsIfAsked } from './kit/settings.js';
+import { installStats } from './kit/stats.js';
 
 const canvas = document.getElementById('view');
+const uiLayer = document.getElementById('ui');
 const hudPanel = document.getElementById('hud');
 const errorPanel = document.getElementById('error');
 const errorText = document.getElementById('error-text');
@@ -147,33 +155,38 @@ function main() {
     return;
   }
 
-  // Before anything reads a stored setting.
-  resetSettingsIfAsked();
+  // Before anything reads a stored setting. Clears the Settings and the
+  // stats panel's keys only.
+  if (resetSettingsIfAsked({ prefix: STORAGE_PREFIX })) {
+    loadingLog('?reset — stored settings cleared, booting with defaults');
+  }
   loadingLog('main thread booting');
 
   // dist/ root, so the renderer can resolve asset URLs from its worker.
   const baseUrl = new URL('./', document.baseURI).href;
 
-  // The canvas's backing-store size, from the resolution setting. Set before
-  // the canvas is transferred; after that only the renderer can change it.
-  const settings = new Settings(canvas);
-  let size = settings.backing();
-  canvas.width = size.width;
-  canvas.height = size.height;
-  const offscreen = canvas.transferControlToOffscreen();
-
   // ── Renderer worker ──
+  //
+  // It starts by probing the GPU and posting `settings-options`: the
+  // Settings menu, the defaults per device class and the resolution policy.
+  // Only then can the page size the canvas and pick the anti-aliasing, so
+  // `init` waits for it (see startRenderer below).
 
   loadingLog('spawning render worker…');
   const renderer = new Worker('renderer/worker.js', { type: 'module' });
+  let settings = null; // once `settings-options` is in
+  let size = null; // the canvas's backing-store size the renderer has
   renderer.addEventListener('message', (event) => {
     const msg = event.data;
+    if (msg?.type === 'settings-options') {
+      startRenderer(msg);
+      return;
+    }
+    // The kit's messages: the compiling overlay, the stats reports.
+    if (settings?.handleMessage(msg) || stats.handleMessage(msg)) return;
     switch (msg?.type) {
       case 'progress':
         loadingLog(msg.message);
-        break;
-      case 'gpu-info':
-        settings.gpuInfo(msg);
         break;
       // The scene is being loaded again (the app asked: R, or a hot swap).
       // The same loading screen as at start-up, until the next `ready`.
@@ -186,18 +199,8 @@ function main() {
       case 'ready':
         loadingLog('first frames rendered — ready');
         loadingDone();
-        stats.markReady();
-        settings.ready();
+        settings?.ready();
         setStatus('running');
-        break;
-      case 'aa-compile-start':
-        settings.compileStart(msg);
-        break;
-      case 'aa-compile-progress':
-        settings.compileProgress(msg.message);
-        break;
-      case 'aa-compile-done':
-        settings.compileDone();
         break;
       case 'error':
         showError('renderer', msg.message);
@@ -209,13 +212,38 @@ function main() {
   renderer.addEventListener('error', (event) => {
     showError('renderer', event.message || 'the worker failed to load (see the console)');
   });
-  // The anti-aliasing comes with `init`, so the renderer is built with it
+  // The renderer's options are in: the Settings can work out the canvas
+  // size and the anti-aliasing. The size is set before the canvas is
+  // transferred; after that only the renderer can change it. The
+  // anti-aliasing comes with `init`, so the renderer is built with it
   // instead of recompiling right after start-up.
-  const { msaa, smaa } = settings.antiAlias();
-  const { width, height } = size;
-  renderer.postMessage({ type: 'init', canvas: offscreen, baseUrl, width, height, msaa, smaa }, [
-    offscreen,
-  ]);
+  function startRenderer(options) {
+    if (settings) return;
+    settings = new Settings({ prefix: STORAGE_PREFIX, canvas, container: uiLayer, options, log: loadingLog });
+    size = settings.backing();
+    canvas.width = size.width;
+    canvas.height = size.height;
+    const offscreen = canvas.transferControlToOffscreen();
+    const { width, height } = size;
+    renderer.postMessage(
+      { type: 'init', canvas: offscreen, baseUrl, width, height, aa: settings.aa() },
+      [offscreen],
+    );
+    settings.start({
+      openButton: document.getElementById('settings-btn'),
+      // A new backing-store size: the window was resized, or the resolution
+      // setting changed. The renderer owns the canvas now, so it resizes it
+      // (and works out the camera's aspect ratio from it).
+      onResize(next) {
+        if (next.width === size.width && next.height === size.height) return;
+        size = next;
+        renderer.postMessage({ type: 'resize', width: size.width, height: size.height });
+      },
+      onAntiAlias(mode) {
+        renderer.postMessage({ type: 'anti-alias', mode });
+      },
+    });
+  }
 
   // ── App worker ──
   //
@@ -270,25 +298,15 @@ function main() {
   // ── Panels ──
 
   const about = installAbout();
+  // The render worker measures and posts the numbers (the C app's too, from
+  // the bridge block); this shows them, and tells it which groups are open.
   const stats = installStats({
-    getBridge: () => app?.bridge ?? null,
+    prefix: STORAGE_PREFIX,
+    panel: document.getElementById('stats'),
+    button: document.getElementById('stats-btn'),
+    post: (msg) => renderer.postMessage(msg),
     onHelp: () => about.open('stats'),
-  });
-
-  // ── Settings: canvas size and anti-aliasing ──
-
-  settings.start({
-    // A new backing-store size: the window was resized, or the resolution
-    // setting changed. The renderer owns the canvas now, so it resizes it
-    // (and works out the camera's aspect ratio from it).
-    onResize(next) {
-      if (next.width === size.width && next.height === size.height) return;
-      size = next;
-      renderer.postMessage({ type: 'resize', width: size.width, height: size.height });
-    },
-    onAntiAlias({ msaa, smaa }) {
-      renderer.postMessage({ type: 'anti-alias', msaa, smaa });
-    },
+    pagePart: 'app events + HUD',
   });
 
   // ── Keyboard ──
